@@ -1,0 +1,57 @@
+import org.gradle.api.GradleException
+import org.gradle.api.initialization.resolve.RepositoriesMode
+
+pluginManagement {
+    def localProps = new Properties()
+    def localPropsFile = file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.withInputStream { localProps.load(it) }
+    }
+    def flutterSdkPath = localProps.getProperty("flutter.sdk") ?: System.getenv("FLUTTER_HOME") ?: System.getenv("FLUTTER_SDK")
+    if (!flutterSdkPath) {
+        throw new GradleException("Flutter SDK not found. Set flutter.sdk in android/local.properties or define FLUTTER_HOME / FLUTTER_SDK.")
+    }
+
+    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+    // Use AGP compatible with Gradle 8.7
+    id "com.android.application" version "8.6.0" apply false
+    id "com.android.library" version "8.6.0" apply false
+    // Upgrade Kotlin to meet Flutter's upcoming minimum (>= 2.1.0)
+    // Note: If your AGP version doesn't support Kotlin 2.1.x, either
+    // upgrade AGP accordingly or temporarily use 2.0.21.
+    id "org.jetbrains.kotlin.android" version "2.1.0" apply false
+}
+
+include ":app"
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
+
+        def localProps = new Properties()
+        def localPropsFile = file("local.properties")
+        if (localPropsFile.exists()) {
+            localPropsFile.withInputStream { localProps.load(it) }
+        }
+        def flutterSdkPath = localProps.getProperty("flutter.sdk") ?: System.getenv("FLUTTER_HOME") ?: System.getenv("FLUTTER_SDK")
+        if (flutterSdkPath) {
+            def engineDir = new File(flutterSdkPath, "bin/cache/artifacts/engine")
+            if (engineDir.exists()) {
+                maven { url = uri(engineDir) }
+            }
+        }
+    }
+}
