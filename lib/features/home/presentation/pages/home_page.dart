@@ -749,59 +749,15 @@ class _SupportChatButton extends StatelessWidget {
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 280),
-                    width: size,
-                    height: size,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: hasUnread
-                          ? const RadialGradient(
-                              colors: [
-                                Color(0xFFFFCDD2),
-                                Color(0xFFE53935),
-                              ],
-                              stops: [0.2, 1.0],
-                            )
-                          : LinearGradient(
-                              colors: [
-                                colorScheme.primary.withValues(alpha: 0.12),
-                                colorScheme.secondary.withValues(alpha: 0.12),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: hasUnread
-                              ? const Color(0xFFE53935).withValues(alpha: 0.6)
-                              : colorScheme.primary.withValues(alpha: 0.25),
-                          blurRadius: hasUnread ? 26 : 12,
-                          spreadRadius: hasUnread ? 4 : 1,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    width: size - 16,
-                    height: size - 16,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: surface,
-                      border: Border.all(
-                        color: hasUnread
-                            ? const Color(0xFFE53935).withValues(alpha: 0.5)
-                            : colorScheme.primary.withValues(alpha: 0.1),
-                        width: hasUnread ? 2 : 1,
-                      ),
-                    ),
-                  ),
+                  const SizedBox.shrink(),
+                  const SizedBox.shrink(),
                   Padding(
                     padding: const EdgeInsets.all(14),
                     child: Image.asset(
                       'assets/help-icon.png',
                       fit: BoxFit.contain,
+                      width: size - 28,
+                      height: size - 28,
                     ),
                   ),
                 ],
@@ -813,6 +769,9 @@ class _SupportChatButton extends StatelessWidget {
     );
   }
 }
+
+// Removed legacy WhatsApp glyph (was using FontAwesome). We now use
+// the bundled asset 'assets/help-icon.png' directly in the FAB.
 
 class _HomeItem {
   final String title;
