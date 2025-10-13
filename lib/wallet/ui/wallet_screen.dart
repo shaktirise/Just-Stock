@@ -1,9 +1,17 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import 'package:newjuststock/wallet/services/wallet_service.dart';
- 
+
+/// Brand colors to match your screenshot
+// Match Home app bar color
+const _kAppbarOrange = Color(0xFFF57C00); // header orange (same as home)
+const _kPrimaryYellow = Color(0xFFFFD200); // buttons / accents
+const _kBalanceBg = Color(0xFFFFF4E5); // light cream for balance card
+const _kInfoBg = Color(0xFFFFF8EC); // light cream for info card
+const _kTextPrimary = Color(0xFF1F2937); // deep slate (readable)
+const _kTextSecondary = Color(0xFF4B5563); // mid slate
 
 class WalletScreen extends StatefulWidget {
   final String name;
@@ -29,11 +37,11 @@ class _WalletScreenState extends State<WalletScreen> {
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
   WalletBalance? _balance;
   bool _loadingBalance = true;
   bool _creatingOrder = false;
   bool _verifyingTopUp = false;
-  bool _debiting = false;
   String? _errorMessage;
   WalletOrder? _pendingOrder;
   int? _pendingOrderAmountInRupees;
@@ -48,7 +56,9 @@ class _WalletScreenState extends State<WalletScreen> {
       _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showSnack('Razorpay checkout is only supported on Android and iOS builds.');
+        _showSnack(
+          'Razorpay checkout is only supported on Android and iOS builds.',
+        );
       });
     }
     _loadBalance();
@@ -59,8 +69,6 @@ class _WalletScreenState extends State<WalletScreen> {
     _razorpay?.clear();
     super.dispose();
   }
-
-  
 
   Future<void> _loadBalance({bool silently = false}) async {
     if (!silently) {
@@ -100,58 +108,93 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Future<void> _promptTopUp() async {
     if (!_supportsRazorpay) {
-      _showSnack('Razorpay checkout is only supported on Android and iOS builds.');
+      _showSnack(
+        'Razorpay checkout is only supported on Android and iOS builds.',
+      );
       return;
     }
+
     final controller = TextEditingController();
-    final amount = await showDialog<int>(
+    final amount = await showModalBottomSheet<int>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Add Money'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Amount in ₹',
-              hintText: 'Enter amount',
-              helperText: 'Minimum ₹1000',
-            ),
+        final viewInsets = MediaQuery.of(context).viewInsets;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.account_balance_wallet_rounded, color: _kAppbarOrange),
+                  SizedBox(width: 8),
+                  Text('Add Money',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  Spacer(),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Amount (₹)',
+                  hintText: 'Enter amount',
+                  helperText: 'Minimum ₹1000',
+                  prefixIcon: Icon(Icons.currency_rupee_rounded),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _QuickChip(onTap: () => controller.text = '1000', label: '₹1000'),
+                  _QuickChip(onTap: () => controller.text = '2000', label: '₹2000'),
+                  _QuickChip(onTap: () => controller.text = '5000', label: '₹5000'),
+                  _QuickChip(onTap: () => controller.text = '10000', label: '₹10k'),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _kPrimaryYellow,
+                    foregroundColor: Colors.black87, // better contrast on yellow
+                    minimumSize: const Size.fromHeight(50),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w900, // bolder
+                      fontSize: 16, // larger
+                      letterSpacing: .2,
+                    ),
+                    shape: const StadiumBorder(),
+                  ),
+                  onPressed: () {
+                    final raw = controller.text.trim();
+                    final parsed = int.tryParse(raw);
+                    if (raw.isEmpty || parsed == null || parsed <= 0) {
+                      ScaffoldMessenger.of(context)
+                        ..removeCurrentSnackBar()
+                        ..showSnackBar(
+                          const SnackBar(
+                            content: Text('Enter a valid amount greater than zero.'),
+                          ),
+                        );
+                      return;
+                    }
+                    Navigator.of(context).pop(parsed);
+                  },
+                  child: const Text('Proceed to Pay'),
+                ),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final raw = controller.text.trim();
-                if (raw.isEmpty) {
-                  ScaffoldMessenger.of(context)
-                    ..removeCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(content: Text('Please enter an amount.')),
-                    );
-                  return;
-                }
-                final parsed = int.tryParse(raw);
-                if (parsed == null || parsed <= 0) {
-                  ScaffoldMessenger.of(context)
-                    ..removeCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Enter a valid amount greater than zero.',
-                        ),
-                      ),
-                    );
-                  return;
-                }
-                Navigator.of(context).pop(parsed);
-              },
-              child: const Text('Continue'),
-            ),
-          ],
         );
       },
     );
@@ -161,9 +204,7 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Future<void> _startTopUp(int amountInRupees) async {
-    setState(() {
-      _creatingOrder = true;
-    });
+    setState(() => _creatingOrder = true);
 
     final result = await WalletService.createTopUpOrder(
       amountInRupees: amountInRupees,
@@ -172,9 +213,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
     if (!mounted) return;
 
-    setState(() {
-      _creatingOrder = false;
-    });
+    setState(() => _creatingOrder = false);
 
     if (!result.ok || result.data == null) {
       _showSnack(result.message);
@@ -192,18 +231,13 @@ class _WalletScreenState extends State<WalletScreen> {
   }) {
     final options = {
       'key': order.key,
-      'amount': order.amount, // amount is already in paise from backend
+      'amount': order.amount, // paise
       'currency': order.currency,
       'order_id': order.orderId,
       'name': 'JustStock Wallet',
       'description': 'Top-up ₹$amountInRupees',
-      'prefill': {
-        'contact': widget.phone ?? '',
-        'email': widget.email,
-      },
-      'theme': {
-        'color': '#FFD200',
-      },
+      'prefill': {'contact': widget.phone ?? '', 'email': widget.email},
+      'theme': {'color': '#FFD200'}, // match primary yellow in Razorpay sheet
     };
 
     final razorpay = _razorpay;
@@ -258,9 +292,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return;
     }
 
-    setState(() {
-      _verifyingTopUp = true;
-    });
+    setState(() => _verifyingTopUp = true);
 
     final result = await WalletService.verifyTopUp(
       razorpayOrderId: orderId,
@@ -272,9 +304,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
     if (!mounted) return;
 
-    setState(() {
-      _verifyingTopUp = false;
-    });
+    setState(() => _verifyingTopUp = false);
 
     if (result.ok) {
       setState(() {
@@ -288,42 +318,6 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
-  Future<void> _debitWallet({
-    int amountInRupees = 50,
-    String note = 'Sample purchase',
-  }) async {
-    setState(() {
-      _debiting = true;
-    });
-
-    final result = await WalletService.debit(
-      amountInRupees: amountInRupees,
-      note: note,
-      token: widget.token,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _debiting = false;
-    });
-
-    if (result.ok && result.data != null) {
-      final receipt = result.data!;
-      final total = receipt.debitedRupees.toStringAsFixed(2);
-      final base = receipt.baseAmountRupees.toStringAsFixed(2);
-      final gst = receipt.gstAmountRupees.toStringAsFixed(2);
-      final noteSuffix =
-          receipt.note != null && receipt.note!.trim().isNotEmpty
-              ? ' (${receipt.note})'
-              : '';
-      _showSnack('₹$total debited (₹$base + ₹$gst GST)$noteSuffix.');
-      await _loadBalance(silently: true);
-    } else {
-      _showSnack(result.message);
-    }
-  }
-
   void _showSnack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -331,118 +325,141 @@ class _WalletScreenState extends State<WalletScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
     final balanceText = _balance != null
         ? '₹${(_balance!.balancePaise / 100).toStringAsFixed(2)}'
         : '₹0.00';
-
     final refreshing = _loadingBalance || _verifyingTopUp;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Wallet'),
-        backgroundColor: scheme.secondary,
+        centerTitle: true,
+        backgroundColor: _kAppbarOrange,
         foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
-          if (_verifyingTopUp || _creatingOrder || _debiting)
-            LinearProgressIndicator(
-              value: null,
-              minHeight: 2,
-              backgroundColor: scheme.primary.withValues(alpha: 0.2),
-              valueColor: AlwaysStoppedAnimation<Color>(scheme.primary),
-            ),
+          if (_verifyingTopUp || _creatingOrder)
+            const LinearProgressIndicator(minHeight: 2, color: _kPrimaryYellow),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () => _loadBalance(silently: true),
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Current Balance',
-                            style: theme.textTheme.titleMedium,
+                  // Balance card (light cream)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _kBalanceBg,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Current Balance',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: _kTextPrimary,
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        refreshing
+                            ? const SizedBox(
+                                height: 22,
+                                width: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2.2),
+                              )
+                            : Text(
+                                balanceText,
+                                style: const TextStyle(
+                                  fontSize: 34,
+                                  fontWeight: FontWeight.w900,
+                                  color: _kTextPrimary,
+                                ),
+                              ),
+                        if (_errorMessage != null) ...[
                           const SizedBox(height: 8),
-                          if (refreshing)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Center(child: CircularProgressIndicator()),
-                            )
-                          else
-                            Text(
-                              balanceText,
-                              style: theme.textTheme.displaySmall?.copyWith(
-                                color: scheme.primary,
-                                fontWeight: FontWeight.w800,
-                              ),
+                          Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
                             ),
-                          if (_errorMessage != null) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              _errorMessage!,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.error,
-                              ),
-                            ),
-                          ],
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _creatingOrder ? null : _promptTopUp,
-                    icon: const Icon(Icons.add_circle_outline),
-                    label: _creatingOrder
-                        ? const Text('Creating order...')
-                        : const Text('Add Money'),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _debiting ? null : () => _debitWallet(),
-                    icon: const Icon(Icons.shopping_bag_outlined),
-                    label: _debiting
-                        ? const Text('Processing...')
-                        : const Text('Purchase for ₹50'),
-                  ),
-                  const SizedBox(height: 24),
-                  Card(
-                    elevation: 0,
-                    color: scheme.primaryContainer.withValues(alpha: 0.2),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'How it works',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Add money using Razorpay test mode. After successful payment, the transaction is verified and your balance refreshes automatically.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'For production, update the Razorpay key and prefill details with live credentials.',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ],
+
+                  const SizedBox(height: 18),
+
+                  // Add Money button (yellow pill, bold & larger text, black for contrast)
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _kPrimaryYellow,
+                        foregroundColor: Colors.black87, // improved contrast
+                        minimumSize: const Size.fromHeight(54),
+                        shape: const StadiumBorder(),
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w900, // bold
+                          fontSize: 16, // larger
+                          letterSpacing: .2,
+                        ),
                       ),
+                      onPressed: _creatingOrder ? null : _promptTopUp,
+                      icon: const Icon(Icons.add_circle_outline),
+                      label: Text(_creatingOrder ? 'Creating order…' : 'Add Money'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // Info card (light cream)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _kInfoBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE9E2B8)),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'How it works',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: _kTextPrimary,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Add money using Razorpay. After successful payment, the transaction is verified and your balance refreshes automatically.',
+                          style: TextStyle(height: 1.4, color: _kTextSecondary),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'For production, update the Razorpay key and prefill details with live credentials.',
+                          style: TextStyle(fontSize: 13, color: _kTextSecondary),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -450,6 +467,33 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuickChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ActionChip(
+        visualDensity: VisualDensity.compact,
+        backgroundColor: _kPrimaryYellow.withOpacity(0.18),
+        side: const BorderSide(color: _kPrimaryYellow, width: .6),
+        label: Text(
+          label,
+          style: const TextStyle(
+            color: _kTextPrimary,
+            fontWeight: FontWeight.w700, // bolder chips too
+          ),
+        ),
+        onPressed: onTap,
       ),
     );
   }

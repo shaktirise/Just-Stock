@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'package:newjuststock/core/navigation/fade_route.dart';
 import 'package:newjuststock/features/auth/presentation/pages/login_page.dart';
 import 'package:newjuststock/features/home/presentation/pages/home_page.dart';
@@ -86,71 +85,28 @@ class _SignupPageState extends State<SignupPage> {
     );
   }
 
-  String? _validateName(String? value) {
-    final input = value?.trim() ?? '';
-    if (input.isEmpty) {
-      return 'Enter your full name.';
-    }
-    if (input.length < 2) {
-      return 'Name is too short.';
-    }
-    return null;
-  }
-
-  String? _validateEmail(String? value) {
-    final input = value?.trim() ?? '';
-    if (input.isEmpty) {
-      return 'Enter your email address.';
-    }
-    final emailPattern =
-        RegExp(r'^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$', caseSensitive: false);
-    if (!emailPattern.hasMatch(input)) {
-      return 'Enter a valid email.';
-    }
-    return null;
-  }
-
-  String? _validatePassword(String? value) {
-    final input = value ?? '';
-    if (input.isEmpty) {
-      return 'Create a password.';
-    }
-    if (input.length < 6) {
-      return 'Password must be at least 6 characters.';
-    }
-    return null;
-  }
-
-  String? _validateConfirmPassword(String? value) {
-    final input = value ?? '';
-    if (input.isEmpty) {
-      return 'Confirm your password.';
-    }
-    if (input != _passwordController.text) {
-      return 'Passwords do not match.';
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    const creamBackground = Color(0xFFFFF8E7);
+    const darkOrange = Color(0xFFE67E22);
+    const yellowButton = Color(0xFFFFD500);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: creamBackground,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 460),
             child: Card(
-              elevation: 8,
+              color: Colors.white.withOpacity(0.95),
+              elevation: 10,
+              shadowColor: Colors.black26,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+                padding: const EdgeInsets.fromLTRB(28, 32, 28, 36),
                 child: Form(
                   key: _formKey,
                   child: Column(
@@ -161,94 +117,91 @@ class _SignupPageState extends State<SignupPage> {
                         alignment: Alignment.center,
                         child: Icon(
                           Icons.person_add_alt_1_outlined,
-                          size: 48,
-                          color: colorScheme.secondary,
+                          size: 54,
+                          color: darkOrange,
                         ),
                       ),
                       const SizedBox(height: 18),
                       Text(
                         'Create your JustStock account',
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF1F1F1F),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 20,
+                          color: Colors.black87,
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text(
+                      const Text(
                         'Track trades, invite your network, and earn together.',
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                        style: TextStyle(
                           color: Colors.black54,
+                          fontSize: 14,
                         ),
+                      ),
+                      const SizedBox(height: 28),
+
+                      // Input Fields
+                      _buildTextField(
+                        controller: _nameController,
+                        icon: Icons.person_outline,
+                        label: 'Full name',
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        controller: _emailController,
+                        icon: Icons.email_outlined,
+                        label: 'Email',
+                        inputType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        controller: _passwordController,
+                        icon: Icons.lock_outline,
+                        label: 'Password',
+                        obscure: true,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        controller: _confirmPasswordController,
+                        icon: Icons.lock_person_outlined,
+                        label: 'Confirm password',
+                        obscure: true,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        controller: _referralController,
+                        icon: Icons.card_giftcard_outlined,
+                        label: 'Referral code (optional)',
                       ),
                       const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _nameController,
-                        textCapitalization: TextCapitalization.words,
-                        autofillHints: const [AutofillHints.name],
-                        decoration: const InputDecoration(
-                          labelText: 'Full name',
-                          prefixIcon: Icon(Icons.person_outline),
-                        ),
-                        validator: _validateName,
-                      ),
-                      const SizedBox(height: 18),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: Icon(Icons.email_outlined),
-                        ),
-                        validator: _validateEmail,
-                      ),
-                      const SizedBox(height: 18),
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        autofillHints: const [AutofillHints.newPassword],
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: Icon(Icons.lock_outline_rounded),
-                        ),
-                        validator: _validatePassword,
-                      ),
-                      const SizedBox(height: 18),
-                      TextFormField(
-                        controller: _confirmPasswordController,
-                        obscureText: true,
-                        autofillHints: const [AutofillHints.newPassword],
-                        decoration: const InputDecoration(
-                          labelText: 'Confirm password',
-                          prefixIcon: Icon(Icons.lock_person_outlined),
-                        ),
-                        validator: _validateConfirmPassword,
-                      ),
-                      const SizedBox(height: 18),
-                      TextFormField(
-                        controller: _referralController,
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: const InputDecoration(
-                          labelText: 'Referral code (optional)',
-                          prefixIcon: Icon(Icons.card_giftcard_outlined),
-                        ),
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          _error!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.error,
+
+                      // Error message
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 18),
-                      FilledButton(
+
+                      // Create Account Button
+                      ElevatedButton(
                         onPressed: _submitting ? null : _handleSignup,
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: yellowButton,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          shadowColor: Colors.black38,
+                          elevation: 4,
                         ),
                         child: _submitting
                             ? const SizedBox(
@@ -257,20 +210,39 @@ class _SignupPageState extends State<SignupPage> {
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
+                                      Colors.black),
                                 ),
                               )
-                            : const Text('Create account'),
+                            : const Text(
+                                'Create account',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
                       ),
-                      const SizedBox(height: 16),
+
+                      const SizedBox(height: 20),
+
+                      // Sign In Text
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text('Already have an account?'),
-                          TextButton(
-                            onPressed: _openLogin,
-                            child: const Text('Sign in'),
+                          const Text(
+                            'Already have an account? ',
+                            style: TextStyle(color: Colors.black87),
+                          ),
+                          GestureDetector(
+                            onTap: _openLogin,
+                            child: const Text(
+                              'Sign in',
+                              style: TextStyle(
+                                color: darkOrange,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -280,6 +252,34 @@ class _SignupPageState extends State<SignupPage> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required IconData icon,
+    required String label,
+    bool obscure = false,
+    TextInputType? inputType,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscure,
+      keyboardType: inputType,
+      decoration: InputDecoration(
+        prefixIcon: Icon(icon, color: Colors.black54),
+        labelText: label,
+        filled: true,
+        fillColor: const Color(0xFFFFFCF3),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.black26),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFE67E22), width: 1.5),
         ),
       ),
     );

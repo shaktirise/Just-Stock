@@ -71,7 +71,7 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
     );
 
     const bullets = [
-      'Any available service, including but not limited to the compliance status and screening of stocks, is purely for information and educational purposes.',
+      'Any available service, including but not limited to the compliance status and screening of stocks, is purely for information and educational purposes only.',
       'We do not undertake any liability for damage, cost, harm, or loss caused in connection with the information available in the app, website, or blogs.',
       'Be aware of the risks involved in trading in financial markets. We recommend consulting a qualified financial advisor before making any investment or financial decision.',
     ];
@@ -81,6 +81,9 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
       child: Scaffold(
         backgroundColor: const Color(0xFFFFF5C6),
         body: Container(
+
+
+
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               colors: [Color(0xFFFDD978), Color(0xFFFFF7DD)],
@@ -117,7 +120,7 @@ class _TermsConditionsPageState extends State<TermsConditionsPage> {
                         Text('Disclaimer', style: headlineStyle),
                         const SizedBox(height: 12),
                         Text(
-                          'We are not a registered broker, investment advisor, financial advisor, or any license required financial institution.',
+                          'We are not SEBI registered, investment advisor, financial advisor, or any license required financial institution.',
                           style: bodyStyle,
                         ),
                         const SizedBox(height: 18),

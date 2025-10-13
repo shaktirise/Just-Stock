@@ -54,10 +54,7 @@ class _LoginPageState extends State<LoginPage> {
       final Widget target = session.termsAccepted
           ? HomePage(session: session)
           : TermsConditionsPage(session: session);
-      Navigator.of(context).pushAndRemoveUntil(
-        fadeRoute(target),
-        (route) => false,
-      );
+      Navigator.of(context).pushAndRemoveUntil(fadeRoute(target), (r) => false);
       return;
     }
 
@@ -71,9 +68,7 @@ class _LoginPageState extends State<LoginPage> {
 
   void _openSignup() {
     if (_submitting) return;
-    Navigator.of(context).pushReplacement(
-      fadeRoute(const SignupPage()),
-    );
+    Navigator.of(context).pushReplacement(fadeRoute(const SignupPage()));
   }
 
   void _showForgotPasswordSnackbar() {
@@ -81,164 +76,292 @@ class _LoginPageState extends State<LoginPage> {
     ScaffoldMessenger.of(context)
       ..removeCurrentSnackBar()
       ..showSnackBar(
-        const SnackBar(
-          content: Text('Password reset coming soon.'),
-        ),
+        const SnackBar(content: Text('Password reset coming soon.')),
       );
   }
 
   String? _validateEmail(String? value) {
     final input = value?.trim() ?? '';
-    if (input.isEmpty) {
-      return 'Enter your email address.';
-    }
-    final emailPattern =
-        RegExp(r'^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$', caseSensitive: false);
-    if (!emailPattern.hasMatch(input)) {
-      return 'Enter a valid email.';
-    }
+    if (input.isEmpty) return 'Enter your email address.';
+    final emailPattern = RegExp(
+      r'^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$',
+      caseSensitive: false,
+    );
+    if (!emailPattern.hasMatch(input)) return 'Enter a valid email.';
     return null;
   }
 
   String? _validatePassword(String? value) {
     final input = value ?? '';
-    if (input.isEmpty) {
-      return 'Enter your password.';
-    }
-    if (input.length < 6) {
-      return 'Password must be at least 6 characters.';
-    }
+    if (input.isEmpty) return 'Enter your password.';
+    if (input.length < 6) return 'Password must be at least 6 characters.';
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    const cream = Color(0xFFFFF8E7);
+    const yellow = Color(0xFFFFD500);
+    const darkOrange = Color(0xFFE67E22);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Card(
-              elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.lock_outline_rounded,
-                          size: 48,
-                          color: colorScheme.secondary,
-                        ),
+      backgroundColor: cream,
+      body: Stack(
+        children: [
+          // 🔶 Curved Header with Highlighted "JustStock"
+          SizedBox(
+            height: 260,
+            width: double.infinity,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                ClipPath(
+                  clipper: _CurvedHeaderClipper(),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFFFFC300), // yellow
+                          Color(0xFFFFA000), // amber
+                          Color(0xFFE67E22), // orange
+                        ],
                       ),
-                      const SizedBox(height: 18),
-                      Text(
-                        'Welcome back!',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF1F1F1F),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Sign in with your email and password to continue.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.black54,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: Icon(Icons.email_outlined),
-                        ),
-                        validator: _validateEmail,
-                      ),
-                      const SizedBox(height: 18),
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        autofillHints: const [AutofillHints.password],
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: Icon(Icons.lock_outline_rounded),
-                        ),
-                        validator: _validatePassword,
-                      ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed:
-                              _submitting ? null : _showForgotPasswordSnackbar,
-                          child: const Text('Forgot password?'),
-                        ),
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          _error!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.error,
-                          ),
+                    ),
+                  ),
+                ),
+                // Centered JustStock Branding
+                const Positioned(
+                  bottom: 90,
+                  child: Text(
+                    'JustStock',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 40,
+                      letterSpacing: 1.5,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black38,
+                          offset: Offset(2, 3),
+                          blurRadius: 6,
                         ),
                       ],
-                      const SizedBox(height: 18),
-                      FilledButton(
-                        onPressed: _submitting ? null : _handleLogin,
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48),
-                        ),
-                        child: _submitting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 🧾 Card Body
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Card(
+                  elevation: 10,
+                  shadowColor: Colors.black26,
+                  color: Colors.white.withOpacity(0.97),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Icon(Icons.lock_outline_rounded,
+                              size: 48, color: darkOrange),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Welcome back!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 22,
+                              color: Colors.black,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Sign in with your email and password to continue.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.black54,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Email
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                            validator: _validateEmail,
+                            decoration: _inputDecoration(
+                              label: 'Email',
+                              icon: Icons.email_outlined,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Password
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: true,
+                            autofillHints: const [AutofillHints.password],
+                            validator: _validatePassword,
+                            decoration: _inputDecoration(
+                              label: 'Password',
+                              icon: Icons.lock_outline_rounded,
+                            ),
+                          ),
+
+                          // Forgot Password
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _submitting
+                                  ? null
+                                  : _showForgotPasswordSnackbar,
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.black87,
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              child: const Text('Forgot password?'),
+                            ),
+                          ),
+
+                          // Error
+                          if (_error != null) ...[
+                            Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+
+                          // Sign In Button
+                          ElevatedButton(
+                            onPressed: _submitting ? null : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: yellow,
+                              minimumSize: const Size.fromHeight(50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(28),
+                              ),
+                              elevation: 4,
+                              shadowColor: Colors.black38,
+                              foregroundColor: Colors.black,
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            child: _submitting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor:
+                                          AlwaysStoppedAnimation<Color>(
+                                              Colors.black),
+                                    ),
+                                  )
+                                : const Text('Sign In'),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Create Account
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('New here? ',
+                                  style: TextStyle(color: Colors.black87)),
+                              TextButton(
+                                onPressed: _openSignup,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: darkOrange,
+                                  textStyle: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
                                   ),
                                 ),
-                              )
-                            : const Text('Sign In'),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('New here?'),
-                          TextButton(
-                            onPressed: _openSignup,
-                            child: const Text('Create account'),
+                                child: const Text('Create account'),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
+
+  // Custom Input Decoration
+  InputDecoration _inputDecoration({
+    required String label,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: Colors.black54),
+      filled: true,
+      fillColor: const Color(0xFFFFFCF3),
+      labelStyle: const TextStyle(color: Colors.black87),
+      floatingLabelStyle: const TextStyle(
+        color: Colors.black87,
+        fontWeight: FontWeight.w600,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Colors.black26),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFE67E22), width: 1.5),
+      ),
+    );
+  }
+}
+
+// 🌀 Custom Curved Header
+class _CurvedHeaderClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path()..lineTo(0, size.height - 60);
+    path.quadraticBezierTo(
+      size.width * 0.5,
+      size.height,
+      size.width,
+      size.height - 60,
+    );
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
