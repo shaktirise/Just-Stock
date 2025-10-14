@@ -67,7 +67,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/ads/
+    - assets/add/
     - assets/symbols/
     - assets/app_icon/
     - assets/help-icon.png

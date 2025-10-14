@@ -11,9 +11,11 @@ class SignupPage extends StatefulWidget {
 
   @override
   State<SignupPage> createState() => _SignupPageState();
+
 }
 
 class _SignupPageState extends State<SignupPage> {
+
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -26,12 +28,14 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   void dispose() {
+
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _referralController.dispose();
     super.dispose();
+    
   }
 
   Future<void> _handleSignup() async {

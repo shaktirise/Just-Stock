@@ -2,7 +2,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -666,9 +665,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     const SizedBox(height: 16),
                     _AdsSlider(
                       assetPaths: const [
-                        'assets/ads/ad_low_js.mp4',
-                        'assets/ads/free_acc.mp4',
-                        'assets/ads/add3.mp4',
+                        'assets/add/1.mp4',
+                        'assets/add/2.mp4',
+                        'assets/add/3.mp4',
+                        'assets/add/4.mp4',
+                        'assets/add/5.mp4',
                       ],
                     ),
                     const SizedBox(height: 24),
@@ -1032,7 +1033,11 @@ class _AdVideoTile extends StatefulWidget {
   State<_AdVideoTile> createState() => _AdVideoTileState();
 }
 
-class _AdVideoTileState extends State<_AdVideoTile> {
+class _AdVideoTileState extends State<_AdVideoTile>
+    with AutomaticKeepAliveClientMixin<_AdVideoTile> {
+  static final Uri _adLandingUri = Uri.parse(
+    'https://ekyc.arhamwealth.com/?branchcode=PSS&rmcode=&apcode=',
+  );
   VideoPlayerController? _controller;
 
   @override
@@ -1053,13 +1058,13 @@ class _AdVideoTileState extends State<_AdVideoTile> {
 
   Future<void> _load() async {
     try {
-      await rootBundle.load(widget.assetPath);
-      final controller = VideoPlayerController.asset(widget.assetPath);
+      final controller = VideoPlayerController.asset(
+        widget.assetPath,
+        videoPlayerOptions: const VideoPlayerOptions(mixWithOthers: true),
+      );
       await controller.initialize();
-      controller
-        ..setLooping(true)
-        ..setVolume(0)
-        ..play();
+      await controller.setLooping(true);
+      await controller.setVolume(0);
       if (!mounted) {
         await controller.dispose();
         return;
@@ -1067,6 +1072,7 @@ class _AdVideoTileState extends State<_AdVideoTile> {
       setState(() {
         _controller = controller;
       });
+      unawaited(controller.play());
     } catch (e) {
       debugPrint('Ad asset failed to load ${widget.assetPath}: $e');
     }
@@ -1079,7 +1085,31 @@ class _AdVideoTileState extends State<_AdVideoTile> {
   }
 
   @override
+  bool get wantKeepAlive => true;
+
+  Future<void> _openAdLink() async {
+    try {
+      final launched = await launchUrl(
+        _adLandingUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to open the offer link.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to launch ad link: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open the offer link.')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    super.build(context);
     final controller = _controller;
     final aspectRatio =
         controller != null &&
@@ -1087,13 +1117,21 @@ class _AdVideoTileState extends State<_AdVideoTile> {
             controller.value.aspectRatio > 0
         ? controller.value.aspectRatio
         : 16 / 9;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: AspectRatio(
-        aspectRatio: aspectRatio,
-        child: controller != null && controller.value.isInitialized
-            ? VideoPlayer(controller)
-            : const _LoadingAdPlaceholder(),
+    const borderRadius = BorderRadius.all(Radius.circular(16));
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openAdLink,
+        borderRadius: borderRadius,
+        child: ClipRRect(
+          borderRadius: borderRadius,
+          child: AspectRatio(
+            aspectRatio: aspectRatio,
+            child: controller != null && controller.value.isInitialized
+                ? VideoPlayer(controller)
+                : const _LoadingAdPlaceholder(),
+          ),
+        ),
       ),
     );
   }
@@ -1445,18 +1483,10 @@ class _AdsSliderState extends State<_AdsSlider> {
   }
 
   Future<void> _prepareAssets() async {
-    final results = <String>[];
-    for (final path in widget.assetPaths) {
-      try {
-        await rootBundle.load(path);
-        results.add(path);
-      } catch (_) {
-        debugPrint('Ad asset missing, skipping: $path');
-      }
-    }
+    final deduped = widget.assetPaths.toSet().toList();
     if (!mounted) return;
     setState(() {
-      _validPaths = results.isEmpty ? widget.assetPaths : results;
+      _validPaths = deduped.isEmpty ? widget.assetPaths : deduped;
       _index = 0;
       _ready = true;
     });
