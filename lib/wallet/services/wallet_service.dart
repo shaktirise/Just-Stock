@@ -55,25 +55,61 @@ class WalletBalance {
 class WalletOrder {
   final String key;
   final String orderId;
-  final int amount;
+  final int amountPaise;
+  final int? amountRupees;
   final String currency;
 
   const WalletOrder({
     required this.key,
     required this.orderId,
-    required this.amount,
+    required this.amountPaise,
+    this.amountRupees,
     required this.currency,
   });
 
+  int resolvedAmountPaise({required int fallbackRupees}) {
+    if (amountPaise > 0) return amountPaise;
+    if (fallbackRupees > 0) return fallbackRupees * 100;
+    if (amountRupees != null && amountRupees! > 0) {
+      return amountRupees! * 100;
+    }
+    return 0;
+  }
+
   factory WalletOrder.fromJson(Map<String, dynamic> json) {
-    final amountRaw = json['amount'];
-    final parsedAmount = amountRaw is int
-        ? amountRaw
-        : int.tryParse(amountRaw?.toString() ?? '') ?? 0;
+    int parseInt(dynamic value) {
+      if (value is int) return value;
+      if (value is double) return value.round();
+      if (value == null) return 0;
+      return int.tryParse(value.toString()) ?? 0;
+    }
+
+    final rawAmount = parseInt(json['amount']);
+    final amountInPaise = parseInt(
+      json['amountInPaise'] ?? json['amount_paise'] ?? json['amount_in_paise'],
+    );
+    final amountInRupees = parseInt(
+      json['amountInRupees'] ?? json['amount_rupees'] ?? json['amount_rupee'],
+    );
+
+    int resolvedPaise = 0;
+    if (amountInPaise > 0) {
+      resolvedPaise = amountInPaise;
+    } else if (rawAmount > 0) {
+      resolvedPaise = rawAmount;
+    } else if (amountInRupees > 0) {
+      resolvedPaise = amountInRupees * 100;
+    }
+
+    final resolvedRupees = amountInRupees > 0
+        ? amountInRupees
+        : (resolvedPaise > 0 ? resolvedPaise ~/ 100 : null);
+
     return WalletOrder(
       key: json['key']?.toString() ?? '',
       orderId: json['order_id']?.toString() ?? '',
-      amount: parsedAmount,
+      amountPaise: resolvedPaise,
+      amountRupees: resolvedRupees == 0 ? null : resolvedRupees,
       currency: json['currency']?.toString() ?? 'INR',
     );
   }
@@ -118,6 +154,7 @@ class WalletDebitReceipt {
 class WalletService {
   static String get _baseUrl => '${ApiConfig.apiBaseUrl}/api/wallet';
   static const int _minimumTopUpRupees = 1;
+  static const int minimumTopUpRupees = _minimumTopUpRupees;
 
   const WalletService._();
 
@@ -166,7 +203,13 @@ class WalletService {
     }
 
     final uri = Uri.parse('$_baseUrl/topups/create-order');
-    final body = jsonEncode({'amountInRupees': amountInRupees});
+    final amountInPaise = amountInRupees * 100;
+    final body = jsonEncode({
+      'amountInRupees': amountInRupees,
+      'amountInPaise': amountInPaise,
+      'amount': amountInPaise,
+      'currency': 'INR',
+    });
     try {
       final res = await http.post(
         uri,
@@ -193,6 +236,7 @@ class WalletService {
     required String razorpayPaymentId,
     required String razorpaySignature,
     required int amountInRupees,
+    int? amountInPaise,
     String? token,
   }) async {
     final authToken = await _resolveToken(token: token);
@@ -201,11 +245,15 @@ class WalletService {
     }
 
     final uri = Uri.parse('$_baseUrl/topups/verify');
+    final resolvedPaise = amountInPaise ?? (amountInRupees * 100);
     final payload = jsonEncode({
       'razorpay_order_id': razorpayOrderId,
       'razorpay_payment_id': razorpayPaymentId,
       'razorpay_signature': razorpaySignature,
-      'amount': amountInRupees,
+      'amountInRupees': amountInRupees,
+      'amountInPaise': resolvedPaise,
+      'amount': resolvedPaise,
+      'currency': 'INR',
     });
 
     try {

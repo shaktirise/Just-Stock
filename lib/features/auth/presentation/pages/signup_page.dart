@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:newjuststock/core/navigation/fade_route.dart';
 import 'package:newjuststock/features/auth/presentation/pages/login_page.dart';
 import 'package:newjuststock/features/home/presentation/pages/home_page.dart';
 import 'package:newjuststock/features/legal/presentation/pages/terms_conditions_page.dart';
 import 'package:newjuststock/services/auth_service.dart';
+import 'package:newjuststock/services/referral_link_service.dart';
 import 'package:newjuststock/services/session_service.dart';
 
 class SignupPage extends StatefulWidget {
@@ -11,31 +14,50 @@ class SignupPage extends StatefulWidget {
 
   @override
   State<SignupPage> createState() => _SignupPageState();
-
 }
 
 class _SignupPageState extends State<SignupPage> {
-
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _referralController = TextEditingController();
+  StreamSubscription<String>? _referralSubscription;
 
   bool _submitting = false;
   String? _error;
 
   @override
-  void dispose() {
+  void initState() {
+    super.initState();
+    _prefillReferralCode();
+    _referralSubscription = ReferralLinkService.onReferralCode.listen((code) {
+      if (!mounted) return;
+      if (_referralController.text.trim().isNotEmpty) return;
+      final normalized = code.trim().toUpperCase();
+      if (normalized.isEmpty) return;
+      _referralController.text = normalized;
+    });
+  }
 
+  Future<void> _prefillReferralCode() async {
+    final code = await ReferralLinkService.getPendingReferralCode();
+    if (!mounted) return;
+    if (code == null || code.trim().isEmpty) return;
+    if (_referralController.text.trim().isNotEmpty) return;
+    _referralController.text = code.trim().toUpperCase();
+  }
+
+  @override
+  void dispose() {
+    _referralSubscription?.cancel();
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _referralController.dispose();
     super.dispose();
-    
   }
 
   Future<void> _handleSignup() async {
@@ -63,14 +85,14 @@ class _SignupPageState extends State<SignupPage> {
     if (response.ok && response.data != null) {
       final session = response.data!;
       await SessionService.saveSession(session);
+      await ReferralLinkService.clearPendingReferralCode();
       if (!mounted) return;
       final Widget target = session.termsAccepted
           ? HomePage(session: session)
           : TermsConditionsPage(session: session);
-      Navigator.of(context).pushAndRemoveUntil(
-        fadeRoute(target),
-        (route) => false,
-      );
+      Navigator.of(
+        context,
+      ).pushAndRemoveUntil(fadeRoute(target), (route) => false);
       return;
     }
 
@@ -84,9 +106,7 @@ class _SignupPageState extends State<SignupPage> {
 
   void _openLogin() {
     if (_submitting) return;
-    Navigator.of(context).pushReplacement(
-      fadeRoute(const LoginPage()),
-    );
+    Navigator.of(context).pushReplacement(fadeRoute(const LoginPage()));
   }
 
   @override
@@ -139,10 +159,7 @@ class _SignupPageState extends State<SignupPage> {
                       const Text(
                         'Track trades, invite your network, and earn together.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.black54,
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.black54, fontSize: 14),
                       ),
                       const SizedBox(height: 28),
 
@@ -214,7 +231,8 @@ class _SignupPageState extends State<SignupPage> {
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.black),
+                                    Colors.black,
+                                  ),
                                 ),
                               )
                             : const Text(

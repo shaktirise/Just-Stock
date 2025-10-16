@@ -45,6 +45,7 @@ class _WalletScreenState extends State<WalletScreen> {
   String? _errorMessage;
   WalletOrder? _pendingOrder;
   int? _pendingOrderAmountInRupees;
+  int? _pendingOrderAmountInPaise;
 
   @override
   void initState() {
@@ -114,7 +115,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return;
     }
 
-    final controller = TextEditingController();
+    final controller = TextEditingController(text: '0');
     final amount = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -125,6 +126,8 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       builder: (context) {
         final viewInsets = MediaQuery.of(context).viewInsets;
+        final minTopUp = WalletService.minimumTopUpRupees;
+        const quickAmounts = [200, 500, 1000, 2000];
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + viewInsets.bottom),
           child: Column(
@@ -144,20 +147,25 @@ class _WalletScreenState extends State<WalletScreen> {
               TextField(
                 controller: controller,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Amount (₹)',
+                decoration: InputDecoration(
+                  labelText: 'Amount (\u20B9)',
                   hintText: 'Enter amount',
-                  helperText: 'Minimum ₹1000',
-                  prefixIcon: Icon(Icons.currency_rupee_rounded),
+                  helperText: 'Minimum \u20B9$minTopUp',
+                  prefixIcon: const Icon(Icons.currency_rupee_rounded),
                 ),
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _QuickChip(onTap: () => controller.text = '1000', label: '₹1000'),
-                  _QuickChip(onTap: () => controller.text = '2000', label: '₹2000'),
-                  _QuickChip(onTap: () => controller.text = '5000', label: '₹5000'),
-                  _QuickChip(onTap: () => controller.text = '10000', label: '₹10k'),
+                  _QuickChip(
+                    onTap: () => controller.text = '0',
+                    label: '\u20B90',
+                  ),
+                  for (final amount in quickAmounts)
+                    _QuickChip(
+                      onTap: () => controller.text = '$amount',
+                      label: '\u20B9$amount',
+                    ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -220,24 +228,43 @@ class _WalletScreenState extends State<WalletScreen> {
       return;
     }
 
-    _pendingOrder = result.data;
+    final order = result.data!;
+    _pendingOrder = order;
     _pendingOrderAmountInRupees = amountInRupees;
-    _openRazorpayCheckout(order: result.data!, amountInRupees: amountInRupees);
+    final resolvedPaise =
+        order.resolvedAmountPaise(fallbackRupees: amountInRupees);
+    _pendingOrderAmountInPaise = resolvedPaise > 0 ? resolvedPaise : null;
+    _openRazorpayCheckout(order: order, amountInRupees: amountInRupees);
   }
 
   void _openRazorpayCheckout({
     required WalletOrder order,
     required int amountInRupees,
   }) {
+    final amountPaise = order.resolvedAmountPaise(
+      fallbackRupees: amountInRupees,
+    );
+    if (amountPaise <= 0) {
+      _showSnack('Unable to launch payment: invalid amount.');
+      return;
+    }
+    if (order.key.trim().isEmpty || order.orderId.trim().isEmpty) {
+      _showSnack('Unable to launch payment: incomplete order details.');
+      return;
+    }
     final options = {
       'key': order.key,
-      'amount': order.amount, // paise
-      'currency': order.currency,
+      'amount': amountPaise,
+      'currency': order.currency.isNotEmpty ? order.currency : 'INR',
       'order_id': order.orderId,
       'name': 'JustStock Wallet',
-      'description': 'Top-up ₹$amountInRupees',
-      'prefill': {'contact': widget.phone ?? '', 'email': widget.email},
-      'theme': {'color': '#FFD200'}, // match primary yellow in Razorpay sheet
+      'description': 'Top-up \u20B9$amountInRupees',
+      'prefill': {
+        'contact': widget.phone ?? '',
+        'email': widget.email,
+        'name': widget.name,
+      },
+      'theme': {'color': '#FFD200'},
     };
 
     final razorpay = _razorpay;
@@ -257,12 +284,18 @@ class _WalletScreenState extends State<WalletScreen> {
       _showSnack('Payment successful but order context missing.');
       return;
     }
+    final order = _pendingOrder!;
+    final rupees = _pendingOrderAmountInRupees ??
+        order.amountRupees ??
+        (order.amountPaise > 0 ? order.amountPaise ~/ 100 : 0);
+    final paise = _pendingOrderAmountInPaise ??
+        order.resolvedAmountPaise(fallbackRupees: rupees);
     _verifyTopUp(
-      orderId: response.orderId ?? _pendingOrder!.orderId,
+      orderId: response.orderId ?? order.orderId,
       paymentId: response.paymentId ?? '',
       signature: response.signature ?? '',
-      amountInRupees:
-          _pendingOrderAmountInRupees ?? (_pendingOrder!.amount / 100).round(),
+      amountInRupees: rupees,
+      amountInPaise: paise > 0 ? paise : null,
     );
   }
 
@@ -282,6 +315,7 @@ class _WalletScreenState extends State<WalletScreen> {
     required String paymentId,
     required String signature,
     required int amountInRupees,
+    int? amountInPaise,
   }) async {
     if (orderId.isEmpty || paymentId.isEmpty || signature.isEmpty) {
       _showSnack('Missing payment confirmation details.');
@@ -291,14 +325,20 @@ class _WalletScreenState extends State<WalletScreen> {
       _showSnack('Unable to verify payment amount.');
       return;
     }
+    if (amountInPaise != null && amountInPaise <= 0) {
+      _showSnack('Unable to verify payment amount.');
+      return;
+    }
 
     setState(() => _verifyingTopUp = true);
 
+    final resolvedPaise = amountInPaise ?? (amountInRupees * 100);
     final result = await WalletService.verifyTopUp(
       razorpayOrderId: orderId,
       razorpayPaymentId: paymentId,
       razorpaySignature: signature,
       amountInRupees: amountInRupees,
+      amountInPaise: resolvedPaise,
       token: widget.token,
     );
 
@@ -310,6 +350,7 @@ class _WalletScreenState extends State<WalletScreen> {
       setState(() {
         _pendingOrder = null;
         _pendingOrderAmountInRupees = null;
+        _pendingOrderAmountInPaise = null;
       });
       _showSnack('Payment verified successfully.');
       await _loadBalance(silently: true);

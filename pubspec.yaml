@@ -1,4 +1,4 @@
-﻿name: newjuststock
+name: newjuststock
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -38,6 +38,7 @@ dependencies:
   google_fonts: ^6.1.0
   url_launcher: ^6.3.0
   share_plus: ^7.2.1
+  app_links: ^3.5.1
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -67,7 +68,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/add/
     - assets/symbols/
     - assets/app_icon/
     - assets/help-icon.png

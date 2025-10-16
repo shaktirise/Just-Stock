@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -665,11 +665,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     const SizedBox(height: 16),
                     _AdsSlider(
                       assetPaths: const [
-                        'assets/add/1.mp4',
-                        'assets/add/2.mp4',
-                        'assets/add/3.mp4',
-                        'assets/add/4.mp4',
-                        'assets/add/5.mp4',
+                        'https://juststock.in/assets/add/1.mp4',
+                        'https://juststock.in/assets/add/2.mp4',
+                        'https://juststock.in/assets/add/3.mp4',
+                        'https://juststock.in/assets/add/4.mp4',
+                        'https://juststock.in/assets/add/5.mp4',
                       ],
                     ),
                     const SizedBox(height: 24),
@@ -829,7 +829,7 @@ class _HomeCircleTileState extends State<_HomeCircleTile> {
         const TextStyle(fontSize: 12);
     final baseFontSize = baseLabelStyle.fontSize ?? 12.0;
 
-    // ↓ slightly smaller, and cap tightly so it never grows too big
+    // ? slightly smaller, and cap tightly so it never grows too big
     final scaledFontSize = (baseFontSize * (diameter / 64.0)).clamp(9.0, 11.0);
 
     final labelStyle = baseLabelStyle.copyWith(
@@ -838,7 +838,7 @@ class _HomeCircleTileState extends State<_HomeCircleTile> {
       letterSpacing: 0.1, // a touch tighter
     );
 
-    // ↓ make the inner icon a bit smaller so everything breathes
+    // ? make the inner icon a bit smaller so everything breathes
     final iconSize = (diameter * 0.4).clamp(16.0, 36.0); // Increased icon size
 
     final baseScale = hasNotification ? 1.02 : 1.0;
@@ -1058,10 +1058,7 @@ class _AdVideoTileState extends State<_AdVideoTile>
 
   Future<void> _load() async {
     try {
-      final controller = VideoPlayerController.asset(
-        widget.assetPath,
-        videoPlayerOptions: const VideoPlayerOptions(mixWithOthers: true),
-      );
+      final controller = (widget.assetPath.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(widget.assetPath), videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true)) : VideoPlayerController.asset(widget.assetPath, videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true)));
       await controller.initialize();
       await controller.setLooping(true);
       await controller.setVolume(0);
@@ -1563,4 +1560,5 @@ class _AdsSliderState extends State<_AdsSlider> {
     );
   }
 }
+
 

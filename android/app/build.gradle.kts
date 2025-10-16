@@ -40,6 +40,7 @@ android {
             // Ensure R8 uses our local rules to suppress warnings about
             // optional ProGuard annotations referenced by some dependencies
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -51,3 +52,5 @@ android {
 flutter {
     source = "../.."
 }
+
+

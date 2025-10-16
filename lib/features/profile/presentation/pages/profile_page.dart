@@ -55,18 +55,19 @@ class _ProfilePageState extends State<ProfilePage> {
   String get _email =>
       _session.user.email.isEmpty ? 'Email not available' : _session.user.email;
 
-  String get _phone =>
-      _session.user.phone?.isNotEmpty == true ? _session.user.phone! : 'Phone not added';
+  String get _phone => _session.user.phone?.isNotEmpty == true
+      ? _session.user.phone!
+      : 'Phone not added';
 
   String? get _referralCode =>
       _session.user.referralCode?.trim().isNotEmpty == true
-          ? _session.user.referralCode!.trim().toUpperCase()
-          : null;
+      ? _session.user.referralCode!.trim().toUpperCase()
+      : null;
 
   String? get _referralLink =>
       _session.user.referralShareLink?.trim().isNotEmpty == true
-          ? _session.user.referralShareLink!.trim()
-          : null;
+      ? _session.user.referralShareLink!.trim()
+      : null;
 
   String get _formattedWalletBalance =>
       '₹ ${(_session.user.walletBalancePaise / 100).toStringAsFixed(2)}';
@@ -162,32 +163,31 @@ class _ProfilePageState extends State<ProfilePage> {
   void _handleSessionExpired() {
     SessionService.clearSession();
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      fadeRoute(const LoginPage()),
-      (route) => false,
-    );
+    Navigator.of(
+      context,
+    ).pushAndRemoveUntil(fadeRoute(const LoginPage()), (route) => false);
   }
 
   Future<void> _openReferralList() async {
-    await Navigator.of(context).push(
-      fadeRoute(ReferralListPage(session: _session)),
-    );
+    await Navigator.of(
+      context,
+    ).push(fadeRoute(ReferralListPage(session: _session)));
     if (!mounted) return;
     await _refreshSession(silent: true);
   }
 
   Future<void> _openReferralTree() async {
-    await Navigator.of(context).push(
-      fadeRoute(ReferralTreePage(session: _session)),
-    );
+    await Navigator.of(
+      context,
+    ).push(fadeRoute(ReferralTreePage(session: _session)));
     if (!mounted) return;
     await _refreshSession(silent: true);
   }
 
   Future<void> _openReferralEarnings() async {
-    await Navigator.of(context).push(
-      fadeRoute(ReferralEarningsPage(session: _session)),
-    );
+    await Navigator.of(
+      context,
+    ).push(fadeRoute(ReferralEarningsPage(session: _session)));
     if (!mounted) return;
     await _refreshSession(silent: true);
   }
@@ -228,35 +228,88 @@ class _ProfilePageState extends State<ProfilePage> {
     }
     await SessionService.clearSession();
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      fadeRoute(const LoginPage()),
-      (route) => false,
-    );
+    Navigator.of(
+      context,
+    ).pushAndRemoveUntil(fadeRoute(const LoginPage()), (route) => false);
   }
 
   Future<void> _shareReferral() async {
     final code = _referralCode;
-    String? shareTarget = _referralLink;
     final template = _shareTemplate;
+    String? rawLink = _referralLink;
 
-    if ((shareTarget == null || shareTarget.isEmpty) &&
+    if ((rawLink == null || rawLink.isEmpty) &&
         template != null &&
         code != null &&
         code.isNotEmpty) {
-      shareTarget = template
+      rawLink = template
           .replaceAll('{code}', code)
           .replaceAll('{{code}}', code)
           .replaceAll('%s', code);
     }
-    shareTarget ??= code;
-
-    if (shareTarget == null || shareTarget.isEmpty) {
+    final inviteUri = _buildInviteUri(rawLink: rawLink, code: code);
+    if ((inviteUri == null) && (code == null || code.isEmpty)) {
       _showSnack('Referral link not available yet.');
       return;
     }
 
-    final message = 'Join me on JustStock using my referral link: $shareTarget';
+    final downloadUri = Uri.parse('https://juststock.in/assets/app/base.apk');
+    final deepLink = code != null && code.isNotEmpty
+        ? Uri(
+            scheme: 'juststock',
+            host: 'referral',
+            queryParameters: {'code': code},
+          )
+        : null;
+
+    final messageLines = <String>['Download the JustStock app: $downloadUri'];
+
+    if (inviteUri != null) {
+      messageLines.add(
+        'Install and open this invite link to auto-apply my referral: $inviteUri',
+      );
+    }
+
+    if (deepLink != null) {
+      messageLines.add('If the app is already installed, open: $deepLink');
+    }
+
+    if (code != null && code.isNotEmpty) {
+      messageLines.add('Referral code (if asked during signup): $code');
+    }
+
+    final message = messageLines.join('\n\n');
     await Share.share(message, subject: 'JustStock referral');
+  }
+
+  Uri? _buildInviteUri({String? rawLink, String? code}) {
+    final trimmedLink = rawLink?.trim();
+    final normalizedCode = code?.trim().toUpperCase();
+
+    if (trimmedLink != null && trimmedLink.isNotEmpty) {
+      final parsed = Uri.tryParse(trimmedLink);
+      if (parsed != null) {
+        if (normalizedCode == null || normalizedCode.isEmpty) {
+          return parsed;
+        }
+        final existingCode =
+            parsed.queryParameters['ref'] ??
+            parsed.queryParameters['code'] ??
+            parsed.queryParameters['referral'];
+        if (existingCode?.toUpperCase() == normalizedCode) {
+          return parsed;
+        }
+        final updatedParams = Map<String, String>.from(parsed.queryParameters);
+        updatedParams['ref'] = normalizedCode;
+        return parsed.replace(queryParameters: updatedParams);
+      }
+    }
+
+    if (normalizedCode == null || normalizedCode.isEmpty) {
+      return null;
+    }
+
+    return Uri.https('juststock.in', '/invite', {'ref': normalizedCode});
   }
 
   // ---------- UI PARTS ----------
@@ -300,23 +353,29 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_displayName,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: _kTextPrimary,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: .2,
-                    )),
+                Text(
+                  _displayName,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: _kTextPrimary,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: .2,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(_email,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: _kTextSecondary,
-                      height: 1.3,
-                    )),
-                Text(_phone,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: _kTextSecondary,
-                      height: 1.3,
-                    )),
+                Text(
+                  _email,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: _kTextSecondary,
+                    height: 1.3,
+                  ),
+                ),
+                Text(
+                  _phone,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: _kTextSecondary,
+                    height: 1.3,
+                  ),
+                ),
               ],
             ),
           ),
@@ -345,24 +404,30 @@ class _ProfilePageState extends State<ProfilePage> {
                   borderRadius: BorderRadius.circular(14),
                 ),
                 padding: const EdgeInsets.all(12),
-                child: const Icon(Icons.account_balance_wallet_rounded,
-                    color: Colors.black87),
+                child: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: Colors.black87,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Wallet balance',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: _kTextSecondary,
-                        )),
+                    Text(
+                      'Wallet balance',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: _kTextSecondary,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(_formattedWalletBalance,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          color: _kTextPrimary,
-                          fontWeight: FontWeight.w900,
-                        )),
+                    Text(
+                      _formattedWalletBalance,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: _kTextPrimary,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -385,13 +450,19 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Referral code',
-                        style: theme.textTheme.labelLarge
-                            ?.copyWith(color: _kTextSecondary)),
+                    Text(
+                      'Referral code',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: _kTextSecondary,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text(referralCode ?? 'Not assigned',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(
+                      referralCode ?? 'Not assigned',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -421,14 +492,19 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Share link',
-                          style: theme.textTheme.labelLarge
-                              ?.copyWith(color: _kTextSecondary)),
+                      Text(
+                        'Share link',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: _kTextSecondary,
+                        ),
+                      ),
                       const SizedBox(height: 2),
                       Text(
-                        shareLinkLabel ?? 'Generated after your account is active.',
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: _kTextPrimary),
+                        shareLinkLabel ??
+                            'Generated after your account is active.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: _kTextPrimary,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -438,7 +514,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 IconButton(
                   tooltip: canCopyLink ? 'Copy link' : 'Not available',
                   onPressed: canCopyLink
-                      ? () => _copyValue(shareLinkLabel!, 'Referral link copied')
+                      ? () =>
+                            _copyValue(shareLinkLabel!, 'Referral link copied')
                       : null,
                   icon: const Icon(Icons.copy_rounded),
                 ),
@@ -501,9 +578,12 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text('Loading referral programme details…',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: _kTextPrimary)),
+              child: Text(
+                'Loading referral programme details…',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: _kTextPrimary,
+                ),
+              ),
             ),
           ],
         ),
@@ -515,20 +595,26 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Referral programme details unavailable',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: _kTextPrimary,
-                  fontWeight: FontWeight.w700,
-                )),
+            Text(
+              'Referral programme details unavailable',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: _kTextPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(_configError!,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.error)),
+            Text(
+              _configError!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: () => _loadReferralConfigFor(_session, silent: false),
+                onPressed: () =>
+                    _loadReferralConfigFor(_session, silent: false),
                 icon: const Icon(Icons.refresh),
                 label: const Text('Retry'),
               ),
@@ -554,43 +640,55 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Referral programme',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: _kTextPrimary,
-                fontWeight: FontWeight.w800,
-              )),
+          Text(
+            'Referral programme',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: _kTextPrimary,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 8),
           if (config.minimumActivationAmount != null)
-            Text('Minimum activation: ₹ ${config.minimumActivationAmount}',
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: _kTextPrimary)),
+            Text(
+              'Minimum activation: ₹ ${config.minimumActivationAmount}',
+              style: theme.textTheme.bodyMedium?.copyWith(color: _kTextPrimary),
+            ),
           if (config.minimumTopUpAmount != null)
-            Text('Minimum top-up: ₹ ${config.minimumTopUpAmount}',
-                style:
-                    theme.textTheme.bodyMedium?.copyWith(color: _kTextPrimary)),
+            Text(
+              'Minimum top-up: ₹ ${config.minimumTopUpAmount}',
+              style: theme.textTheme.bodyMedium?.copyWith(color: _kTextPrimary),
+            ),
           if (gstDisplay != null)
-            Text(gstDisplay,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: _kTextSecondary)),
+            Text(
+              gstDisplay,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: _kTextSecondary,
+              ),
+            ),
           if (config.shareUrlTemplate != null &&
               config.shareUrlTemplate!.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text('Share template:',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: _kTextSecondary,
-                  fontWeight: FontWeight.w700,
-                )),
-            Text(config.shareUrlTemplate!,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: _kTextPrimary)),
+            Text(
+              'Share template:',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _kTextSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              config.shareUrlTemplate!,
+              style: theme.textTheme.bodySmall?.copyWith(color: _kTextPrimary),
+            ),
           ],
           if (levelEntries.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text('Level payouts',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: _kTextSecondary,
-                  fontWeight: FontWeight.w700,
-                )),
+            Text(
+              'Level payouts',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _kTextSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
