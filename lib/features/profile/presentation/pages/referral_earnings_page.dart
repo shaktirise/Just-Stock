@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:newjuststock/core/navigation/fade_route.dart';
 import 'package:newjuststock/features/auth/presentation/pages/login_page.dart';
 import 'package:newjuststock/services/auth_service.dart';
+import 'package:newjuststock/services/auth_models.dart';
 import 'package:newjuststock/services/session_service.dart';
 
 class ReferralEarningsPage extends StatefulWidget {
@@ -16,13 +17,19 @@ class ReferralEarningsPage extends StatefulWidget {
 
 class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
   ReferralEarningsResponse? _data;
+  List<ReferralWithdrawalRequestModel> _withdrawals = const [];
   bool _loading = true;
+  bool _loadingWithdrawals = true;
   String? _error;
+
+  // Util: render amounts in rupees consistently
+  String _rupeesText(int paise) => '₹ ${(paise / 100).toStringAsFixed(2)}';
 
   @override
   void initState() {
     super.initState();
     _loadEarnings();
+    _loadWithdrawals();
   }
 
   Future<void> _loadEarnings() async {
@@ -61,6 +68,32 @@ class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
     }
   }
 
+  Future<void> _loadWithdrawals() async {
+    setState(() {
+      _loadingWithdrawals = true;
+    });
+    final session = await SessionService.ensureSession();
+    if (!mounted) return;
+    if (session == null) return _handleSessionExpired();
+    final response = await AuthService.fetchReferralWithdrawals(
+      accessToken: session.accessToken,
+      limit: 20,
+    );
+    if (!mounted) return;
+    if (response.ok && response.data != null) {
+      setState(() {
+        _withdrawals = response.data!;
+        _loadingWithdrawals = false;
+      });
+    } else if (response.isUnauthorized) {
+      _handleSessionExpired();
+    } else {
+      setState(() {
+        _loadingWithdrawals = false;
+      });
+    }
+  }
+
   void _handleSessionExpired() {
     SessionService.clearSession();
     if (!mounted) return;
@@ -72,6 +105,7 @@ class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
 
   Future<void> _onRefresh() async {
     await _loadEarnings();
+    await _loadWithdrawals();
   }
 
   String _formatRupees(int paise) {
@@ -158,7 +192,7 @@ class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
                     : ListView.separated(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(16),
-                        itemCount: data.entries.length + 1,
+                        itemCount: data.entries.length + 2,
                         separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           if (index == 0) {
@@ -177,7 +211,7 @@ class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      _formatRupees(data.totalEarnedPaise),
+                                      _rupeesText(data.totalEarnedPaise),
                                       style: theme.textTheme.headlineSmall
                                           ?.copyWith(
                                         fontWeight: FontWeight.w700,
@@ -188,11 +222,78 @@ class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
                                       'For ${widget.session.user.name.isEmpty ? 'your account' : widget.session.user.name}',
                                       style: theme.textTheme.bodySmall,
                                     ),
+                                    const SizedBox(height: 12),
+                                    if (data.totalPendingPaise > 0)
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Pending: ${_rupeesText(data.totalPendingPaise)}',
+                                            style: theme.textTheme.bodyMedium,
+                                          ),
+                                          FilledButton.icon(
+                                            onPressed: _requestWithdrawal,
+                                            icon: const Icon(Icons.payments_outlined),
+                                            label: const Text('Request Withdrawal'),
+                                          ),
+                                        ],
+                                      ),
                                   ],
                                 ),
                               ),
                             );
                           }
+                          if (index == data.entries.length + 1) {
+                            return Card(
+                              elevation: 1,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Withdrawal Requests',
+                                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                                        ),
+                                        IconButton(
+                                          onPressed: _loadWithdrawals,
+                                          icon: const Icon(Icons.refresh),
+                                          tooltip: 'Refresh',
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (_loadingWithdrawals)
+                                      const Center(child: CircularProgressIndicator())
+                                    else if (_withdrawals.isEmpty)
+                                      Text(
+                                        'No withdrawal requests yet.',
+                                        style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black54),
+                                      )
+                                    else
+                                      Column(
+                                        children: _withdrawals.map((w) {
+                                          return ListTile(
+                                            dense: true,
+                                            leading: const Icon(Icons.receipt_long),
+                                            title: Text('${w.status.toUpperCase()} • ₹ ${w.amountRupees.toStringAsFixed(2)}'),
+                                            subtitle: Text(
+                                              w.createdAt?.toLocal().toString() ?? '',
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                            trailing: w.ledgerCount > 0 ? Text('${w.ledgerCount} entries') : null,
+                                          );
+                                        }).toList(),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
                           final entry = data.entries[index - 1];
                           return Card(
                             child: ListTile(
@@ -202,7 +303,7 @@ class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
                                 child: const Icon(Icons.currency_rupee),
                               ),
                               title: Text(
-                                _formatRupees(entry.amountPaise),
+                                _rupeesText(entry.amountPaise),
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -231,5 +332,28 @@ class _ReferralEarningsPageState extends State<ReferralEarningsPage> {
                       ),
       ),
     );
+  }
+
+  Future<void> _requestWithdrawal() async {
+    final session = await SessionService.ensureSession();
+    if (!mounted) return;
+    if (session == null) return _handleSessionExpired();
+    final resp = await AuthService.requestReferralWithdrawal(
+      accessToken: session.accessToken,
+    );
+    if (!mounted) return;
+    if (resp.ok && resp.data != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Withdrawal request submitted.')),
+      );
+      await _loadEarnings();
+      await _loadWithdrawals();
+    } else if (resp.isUnauthorized) {
+      _handleSessionExpired();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(resp.message)),
+      );
+    }
   }
 }

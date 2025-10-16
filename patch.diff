@@ -1,0 +1,9 @@
+﻿*** Begin Patch
+*** Update File: lib/wallet/ui/wallet_screen.dart
+@@
+-                  helperText: 'Minimum \\u20B9',
++                  helperText: 'Minimum ₹',
+@@
+-                      label: '\\u20B9',
++                      label: '₹',
+*** End Patch

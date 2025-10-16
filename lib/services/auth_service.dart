@@ -221,6 +221,99 @@ class AuthService {
     }
   }
 
+  static Future<ApiResponse<ReferralWithdrawalRequestModel>> requestReferralWithdrawal({
+    required String accessToken,
+    String? note,
+  }) async {
+    final uri = _authUri('/referrals/withdraw');
+    try {
+      final response = await http.post(
+        uri,
+        headers: _headers(token: accessToken),
+        body: jsonEncode({ if (note != null && note.trim().isNotEmpty) 'note': note.trim() }),
+      );
+      final status = response.statusCode;
+      final json = _decodeJson(response.body);
+      if (status >= 200 && status < 300 && json != null) {
+        final requestJson = _asMap(json['request'] ?? json);
+        return ApiResponse(
+          ok: true,
+          status: status,
+          message: _extractMessage(json, status, 'Withdrawal requested.'),
+          data: ReferralWithdrawalRequestModel.fromJson(requestJson),
+          raw: json,
+        );
+      }
+      return ApiResponse(
+        ok: false,
+        status: status,
+        message: _extractMessage(json, status, 'Unable to request withdrawal.'),
+        data: null,
+        raw: json,
+      );
+    } catch (error) {
+      return ApiResponse(
+        ok: false,
+        status: -1,
+        message: 'Network error: $error',
+        data: null,
+        raw: null,
+      );
+    }
+  }
+
+  static Future<ApiResponse<List<ReferralWithdrawalRequestModel>>> fetchReferralWithdrawals({
+    required String accessToken,
+    int limit = 20,
+  }) async {
+    final uri = _authUri('/referrals/withdrawals', { 'limit': limit });
+    try {
+      final response = await http.get(
+        uri,
+        headers: _headers(token: accessToken),
+      );
+      final status = response.statusCode;
+      final json = _decodeJson(response.body);
+      if (status >= 200 && status < 300 && json != null) {
+        final items = <ReferralWithdrawalRequestModel>[];
+        final raw = json['items'];
+        if (raw is List) {
+          for (final item in raw) {
+            if (item is Map<String, dynamic>) {
+              items.add(ReferralWithdrawalRequestModel.fromJson(item));
+            } else if (item is Map) {
+              items.add(ReferralWithdrawalRequestModel.fromJson(
+                item.map<String, dynamic>((k, v) => MapEntry(k.toString(), v)),
+              ));
+            }
+          }
+        }
+        return ApiResponse(
+          ok: true,
+          status: status,
+          message: _extractMessage(json, status, 'Withdrawals loaded.'),
+          data: items,
+          raw: json,
+        );
+      }
+      return ApiResponse(
+        ok: false,
+        status: status,
+        message: _extractMessage(json, status, 'Unable to load withdrawals.'),
+        data: null,
+        raw: json,
+      );
+    } catch (error) {
+      return ApiResponse(
+        ok: false,
+        status: -1,
+        message: 'Network error: $error',
+        data: null,
+        raw: null,
+      );
+    }
+  }
+
   static Future<ApiResponse<AuthUser>> fetchProfile({
     required String accessToken,
     AuthSession? existing,
