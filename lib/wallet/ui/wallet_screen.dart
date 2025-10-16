@@ -1,23 +1,24 @@
-﻿import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
+import 'package:newjuststock/services/auth_service.dart';
+import 'package:newjuststock/services/session_service.dart';
 import 'package:newjuststock/wallet/services/wallet_service.dart';
 
-/// Brand colors to match your screenshot
-// Match Home app bar color
-const _kAppbarOrange = Color(0xFFF57C00); // header orange (same as home)
-const _kPrimaryYellow = Color(0xFFFFD200); // buttons / accents
-const _kBalanceBg = Color(0xFFFFF4E5); // light cream for balance card
-const _kInfoBg = Color(0xFFFFF8EC); // light cream for info card
-const _kTextPrimary = Color(0xFF1F2937); // deep slate (readable)
-const _kTextSecondary = Color(0xFF4B5563); // mid slate
+// Brand colors
+const _kAppbarOrange = Color(0xFFF57C00);
+const _kPrimaryYellow = Color(0xFFFFD200);
+const _kBalanceBg = Color(0xFFFFF4E5);
+const _kInfoBg = Color(0xFFFFF8EC);
+const _kTextPrimary = Color(0xFF1F2937);
+const _kTextSecondary = Color(0xFF4B5563);
 
 class WalletScreen extends StatefulWidget {
   final String name;
   final String email;
-  final String₹ phone;
-  final String₹ token;
+  final String? phone;
+  final String? token;
 
   const WalletScreen({
     super.key,
@@ -32,20 +33,24 @@ class WalletScreen extends StatefulWidget {
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  Razorpay₹ _razorpay;
+  Razorpay? _razorpay;
   bool get _supportsRazorpay =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
-  WalletBalance₹ _balance;
+  WalletBalance? _balance;
   bool _loadingBalance = true;
   bool _creatingOrder = false;
   bool _verifyingTopUp = false;
-  String₹ _errorMessage;
-  WalletOrder₹ _pendingOrder;
-  int₹ _pendingOrderAmountInRupees;
-  int₹ _pendingOrderAmountInPaise;
+  String? _errorMessage;
+  WalletOrder? _pendingOrder;
+  int? _pendingOrderAmountInRupees;
+  int? _pendingOrderAmountInPaise;
+  static const int _activationTopUpRupees = 2100;
+  static const int _postActivationMinimumTopUpRupees = 1000;
+  bool _activationStatusResolved = false;
+  bool _requiresActivationTopUp = false;
 
   @override
   void initState() {
@@ -63,11 +68,12 @@ class _WalletScreenState extends State<WalletScreen> {
       });
     }
     _loadBalance();
+    _resolveActivationStatus();
   }
 
   @override
   void dispose() {
-    _razorpay₹.clear();
+    _razorpay?.clear();
     super.dispose();
   }
 
@@ -107,6 +113,40 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
+  Future<void> _resolveActivationStatus({bool forceNetwork = false}) async {
+    final session = await SessionService.ensureSession(refreshIfNeeded: false);
+    AuthUser? resolvedUser = session?.user;
+    final accessToken = (widget.token ?? session?.accessToken)?.trim();
+
+    if (forceNetwork && accessToken != null && accessToken.isNotEmpty) {
+      final profile = await AuthService.fetchProfile(
+        accessToken: accessToken,
+        existing: session,
+      );
+      if (profile.ok && profile.data != null) {
+        resolvedUser = profile.data;
+        if (session != null) {
+          await SessionService.updateSession(
+            session.copyWith(user: profile.data!),
+          );
+        }
+      }
+    }
+
+    if (!mounted) return;
+
+    final user = resolvedUser;
+    final hasUser = user != null;
+    final requiresActivation = hasUser
+        ? user.referralActivatedAt == null
+        : false;
+
+    setState(() {
+      _activationStatusResolved = hasUser;
+      _requiresActivationTopUp = requiresActivation;
+    });
+  }
+
   Future<void> _promptTopUp() async {
     if (!_supportsRazorpay) {
       _showSnack(
@@ -115,7 +155,17 @@ class _WalletScreenState extends State<WalletScreen> {
       return;
     }
 
-    final controller = TextEditingController(text: '0');
+    await _resolveActivationStatus(forceNetwork: false);
+    if (!mounted) return;
+
+    final requiresActivation =
+        _activationStatusResolved && _requiresActivationTopUp;
+    final minTopUp = requiresActivation
+        ? _activationTopUpRupees
+        : _postActivationMinimumTopUpRupees;
+    final defaultAmount = minTopUp;
+    final quickAmounts = <int>[1000, 2000, 3000];
+    final controller = TextEditingController(text: '$defaultAmount');
     final amount = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -126,8 +176,6 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       builder: (context) {
         final viewInsets = MediaQuery.of(context).viewInsets;
-        final minTopUp = WalletService.minimumTopUpRupees;
-        const quickAmounts = [200, 500, 1000, 2000];
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + viewInsets.bottom),
           child: Column(
@@ -136,10 +184,15 @@ class _WalletScreenState extends State<WalletScreen> {
             children: [
               Row(
                 children: const [
-                  Icon(Icons.account_balance_wallet_rounded, color: _kAppbarOrange),
+                  Icon(
+                    Icons.account_balance_wallet_rounded,
+                    color: _kAppbarOrange,
+                  ),
                   SizedBox(width: 8),
-                  Text('Add Money',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  Text(
+                    'Add Money',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
                   Spacer(),
                 ],
               ),
@@ -148,7 +201,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 controller: controller,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: 'Amount (₹)',
+                  labelText: 'Amount (\u20B9)',
                   hintText: 'Enter amount',
                   helperText: 'Minimum \u20B9$minTopUp',
                   prefixIcon: const Icon(Icons.currency_rupee_rounded),
@@ -157,10 +210,6 @@ class _WalletScreenState extends State<WalletScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _QuickChip(
-                    onTap: () => controller.text = '0',
-                    label: '₹0',
-                  ),
                   for (final amount in quickAmounts)
                     _QuickChip(
                       onTap: () => controller.text = '$amount',
@@ -168,17 +217,33 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                 ],
               ),
+              if (requiresActivation) ...[
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Icon(Icons.info_outline, color: _kAppbarOrange, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'First wallet top-up for new accounts is \u20B92100 to activate your wallet. After activation you can add a minimum of \u20B91000.',
+                        style: TextStyle(color: _kTextSecondary, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: _kPrimaryYellow,
-                    foregroundColor: Colors.black87, // better contrast on yellow
+                    foregroundColor: Colors.black87,
                     minimumSize: const Size.fromHeight(50),
                     textStyle: const TextStyle(
-                      fontWeight: FontWeight.w900, // bolder
-                      fontSize: 16, // larger
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
                       letterSpacing: .2,
                     ),
                     shape: const StadiumBorder(),
@@ -186,14 +251,25 @@ class _WalletScreenState extends State<WalletScreen> {
                   onPressed: () {
                     final raw = controller.text.trim();
                     final parsed = int.tryParse(raw);
-                    if (raw.isEmpty || parsed == null || parsed <= 0) {
+                    if (raw.isEmpty || parsed == null) {
                       ScaffoldMessenger.of(context)
                         ..removeCurrentSnackBar()
                         ..showSnackBar(
                           const SnackBar(
-                            content: Text('Enter a valid amount greater than zero.'),
+                            content: Text(
+                              'Enter a valid amount greater than zero.',
+                            ),
                           ),
                         );
+                      return;
+                    }
+                    if (parsed < minTopUp) {
+                      final message = requiresActivation
+                          ? 'First activation top-up must be at least \u20B9$minTopUp.'
+                          : 'Minimum top-up is \u20B9$minTopUp.';
+                      ScaffoldMessenger.of(context)
+                        ..removeCurrentSnackBar()
+                        ..showSnackBar(SnackBar(content: Text(message)));
                       return;
                     }
                     Navigator.of(context).pop(parsed);
@@ -231,9 +307,10 @@ class _WalletScreenState extends State<WalletScreen> {
     final order = result.data!;
     _pendingOrder = order;
     _pendingOrderAmountInRupees = amountInRupees;
-    final resolvedPaise =
-        order.resolvedAmountPaise(fallbackRupees: amountInRupees);
-    _pendingOrderAmountInPaise = resolvedPaise > 0 ₹ resolvedPaise : null;
+    final resolvedPaise = order.resolvedAmountPaise(
+      fallbackRupees: amountInRupees,
+    );
+    _pendingOrderAmountInPaise = resolvedPaise > 0 ? resolvedPaise : null;
     _openRazorpayCheckout(order: order, amountInRupees: amountInRupees);
   }
 
@@ -255,12 +332,12 @@ class _WalletScreenState extends State<WalletScreen> {
     final options = {
       'key': order.key,
       'amount': amountPaise,
-      'currency': order.currency.isNotEmpty ₹ order.currency : 'INR',
+      'currency': order.currency.isNotEmpty ? order.currency : 'INR',
       'order_id': order.orderId,
       'name': 'JustStock Wallet',
       'description': 'Top-up \u20B9$amountInRupees',
       'prefill': {
-        'contact': widget.phone ₹₹ '',
+        'contact': widget.phone ?? '',
         'email': widget.email,
         'name': widget.name,
       },
@@ -269,7 +346,9 @@ class _WalletScreenState extends State<WalletScreen> {
 
     final razorpay = _razorpay;
     if (razorpay == null) {
-      _showSnack('Razorpay checkout is only supported on Android and iOS builds.');
+      _showSnack(
+        'Razorpay checkout is only supported on Android and iOS builds.',
+      );
       return;
     }
     try {
@@ -285,23 +364,25 @@ class _WalletScreenState extends State<WalletScreen> {
       return;
     }
     final order = _pendingOrder!;
-    final rupees = _pendingOrderAmountInRupees ₹₹
-        order.amountRupees ₹₹
-        (order.amountPaise > 0 ₹ order.amountPaise ~/ 100 : 0);
-    final paise = _pendingOrderAmountInPaise ₹₹
+    final rupees =
+        _pendingOrderAmountInRupees ??
+        order.amountRupees ??
+        (order.amountPaise > 0 ? order.amountPaise ~/ 100 : 0);
+    final paise =
+        _pendingOrderAmountInPaise ??
         order.resolvedAmountPaise(fallbackRupees: rupees);
     _verifyTopUp(
-      orderId: response.orderId ₹₹ order.orderId,
-      paymentId: response.paymentId ₹₹ '',
-      signature: response.signature ₹₹ '',
+      orderId: response.orderId ?? order.orderId,
+      paymentId: response.paymentId ?? '',
+      signature: response.signature ?? '',
       amountInRupees: rupees,
-      amountInPaise: paise > 0 ₹ paise : null,
+      amountInPaise: paise > 0 ? paise : null,
     );
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
-    final msg = response.message₹.isNotEmpty == true
-        ₹ response.message!
+    final msg = response.message?.isNotEmpty == true
+        ? response.message!
         : 'Payment failed. Please try again.';
     _showSnack(msg);
   }
@@ -315,7 +396,7 @@ class _WalletScreenState extends State<WalletScreen> {
     required String paymentId,
     required String signature,
     required int amountInRupees,
-    int₹ amountInPaise,
+    int? amountInPaise,
   }) async {
     if (orderId.isEmpty || paymentId.isEmpty || signature.isEmpty) {
       _showSnack('Missing payment confirmation details.');
@@ -332,7 +413,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
     setState(() => _verifyingTopUp = true);
 
-    final resolvedPaise = amountInPaise ₹₹ (amountInRupees * 100);
+    final resolvedPaise = amountInPaise ?? (amountInRupees * 100);
     final result = await WalletService.verifyTopUp(
       razorpayOrderId: orderId,
       razorpayPaymentId: paymentId,
@@ -354,6 +435,7 @@ class _WalletScreenState extends State<WalletScreen> {
       });
       _showSnack('Payment verified successfully.');
       await _loadBalance(silently: true);
+      await _resolveActivationStatus(forceNetwork: true);
     } else {
       _showSnack(result.message);
     }
@@ -366,12 +448,11 @@ class _WalletScreenState extends State<WalletScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
     final balanceText = _balance != null
-        ₹ '₹${(_balance!.balancePaise / 100).toStringAsFixed(2)}'
-        : '₹0.00';
+        ? '\u20B9${(_balance!.balancePaise / 100).toStringAsFixed(2)}'
+        : '\u20B90.00';
     final refreshing = _loadingBalance || _verifyingTopUp;
 
     return Scaffold(
@@ -392,7 +473,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  // Balance card (light cream)
+                  // Balance card
                   Container(
                     decoration: BoxDecoration(
                       color: _kBalanceBg,
@@ -419,10 +500,12 @@ class _WalletScreenState extends State<WalletScreen> {
                         ),
                         const SizedBox(height: 8),
                         refreshing
-                            ₹ const SizedBox(
+                            ? const SizedBox(
                                 height: 22,
                                 width: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2.2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                ),
                               )
                             : Text(
                                 balanceText,
@@ -448,30 +531,61 @@ class _WalletScreenState extends State<WalletScreen> {
 
                   const SizedBox(height: 18),
 
-                  // Add Money button (yellow pill, bold & larger text, black for contrast)
+                  // Add Money button
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: _kPrimaryYellow,
-                        foregroundColor: Colors.black87, // improved contrast
+                        foregroundColor: Colors.black87,
                         minimumSize: const Size.fromHeight(54),
                         shape: const StadiumBorder(),
                         textStyle: const TextStyle(
-                          fontWeight: FontWeight.w900, // bold
-                          fontSize: 16, // larger
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
                           letterSpacing: .2,
                         ),
                       ),
-                      onPressed: _creatingOrder ₹ null : _promptTopUp,
+                      onPressed: _creatingOrder ? null : _promptTopUp,
                       icon: const Icon(Icons.add_circle_outline),
-                      label: Text(_creatingOrder ₹ 'Creating order…' : 'Add Money'),
+                      label: Text(
+                        _creatingOrder ? 'Creating order…' : 'Add Money',
+                      ),
                     ),
                   ),
 
                   const SizedBox(height: 18),
 
-                  // Info card (light cream)
+                  if (_activationStatusResolved &&
+                      _requiresActivationTopUp) ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: _kInfoBg,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE9E2B8)),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline, color: _kAppbarOrange),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Activate your wallet with a one-time top-up of \u20B92100. After activation you can add \u20B91000 or more whenever you add money.',
+                              style: TextStyle(
+                                color: _kTextSecondary,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+
+                  // Info card
                   Container(
                     decoration: BoxDecoration(
                       color: _kInfoBg,
@@ -498,7 +612,10 @@ class _WalletScreenState extends State<WalletScreen> {
                         SizedBox(height: 8),
                         Text(
                           'For production, update the Razorpay key and prefill details with live credentials.',
-                          style: TextStyle(fontSize: 13, color: _kTextSecondary),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _kTextSecondary,
+                          ),
                         ),
                       ],
                     ),
@@ -531,7 +648,7 @@ class _QuickChip extends StatelessWidget {
           label,
           style: const TextStyle(
             color: _kTextPrimary,
-            fontWeight: FontWeight.w700, // bolder chips too
+            fontWeight: FontWeight.w700,
           ),
         ),
         onPressed: onTap,
@@ -539,5 +656,3 @@ class _QuickChip extends StatelessWidget {
     );
   }
 }
-
-

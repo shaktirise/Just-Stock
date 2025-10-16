@@ -193,11 +193,11 @@ class WalletService {
       return WalletApiResult.unauthorized();
     }
 
-    if (amountInRupees < _minimumTopUpRupees) {
+        if (amountInRupees < _minimumTopUpRupees) {
       return WalletApiResult(
         ok: false,
         statusCode: 400,
-        message: 'Minimum top-up is ₹$_minimumTopUpRupees.',
+        message: 'Minimum top-up is \u20B9.',
         data: null,
       );
     }
