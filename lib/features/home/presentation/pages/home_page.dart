@@ -1364,6 +1364,7 @@ class _GallerySliderState extends State<_GallerySlider> {
       ],
     );
 
+    const double borderThickness = 10;
     return Container(
       decoration: BoxDecoration(
         gradient: bgGradient,
@@ -1371,48 +1372,57 @@ class _GallerySliderState extends State<_GallerySlider> {
       ),
       clipBehavior: Clip.hardEdge,
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: 200,
-            child: PageView.builder(
-              controller: _controller,
-              itemCount: images.length,
-              onPageChanged: (index) => setState(() => _currentPage = index),
-              itemBuilder: (context, index) {
-                final image = images[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: _GalleryTile(image: image),
-                  ),
-                );
-              },
-            ),
+      child: Padding(
+        padding: const EdgeInsets.all(borderThickness),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
           ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(images.length, (index) {
-              final active = index == _currentPage;
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                width: active ? 14 : 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: active
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.primary.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(12),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 200,
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: images.length,
+                  onPageChanged: (index) => setState(() => _currentPage = index),
+                  itemBuilder: (context, index) {
+                    final image = images[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: _GalleryTile(image: image),
+                      ),
+                    );
+                  },
                 ),
-              );
-            }),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(images.length, (index) {
+                  final active = index == _currentPage;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: active ? 14 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: active
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.primary.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  );
+                }),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1447,7 +1457,9 @@ class _GalleryTile extends StatelessWidget {
             Container(color: placeholderColor),
             Image.network(
               image.url,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
+              alignment: Alignment.center,
+              filterQuality: FilterQuality.medium,
               loadingBuilder: (context, child, progress) {
                 if (progress == null) return child;
                 return Center(
