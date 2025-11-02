@@ -782,11 +782,11 @@ class _HomePageState extends State<HomePage>
                     const SizedBox(height: 16),
                     _AdsSlider(
                       assetPaths: const [
-                        'https://juststock.in/assets/add/1.mp4',
-                        'https://juststock.in/assets/add/2.mp4',
-                        'https://juststock.in/assets/add/3.mp4',
-                        'https://juststock.in/assets/add/4.mp4',
-                        'https://juststock.in/assets/add/5.mp4',
+                        'assets/add/1.mp4',
+                        'assets/add/2.mp4',
+                        'assets/add/3.mp4',
+                        'assets/add/4.mp4',
+                        'assets/add/5.mp4',
                       ],
                     ),
                     const SizedBox(height: 24),
@@ -1150,6 +1150,8 @@ class _AdVideoTileState extends State<_AdVideoTile>
     'https://ekyc.arhamwealth.com/?branchcode=PSS&rmcode=&apcode=',
   );
   VideoPlayerController? _controller;
+  bool _failed = false;
+  Timer? _initGuard;
 
   @override
   void initState() {
@@ -1169,15 +1171,7 @@ class _AdVideoTileState extends State<_AdVideoTile>
 
   Future<void> _load() async {
     try {
-      final controller = (widget.assetPath.startsWith('http')
-          ? VideoPlayerController.networkUrl(
-              Uri.parse(widget.assetPath),
-              videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-            )
-          : VideoPlayerController.asset(
-              widget.assetPath,
-              videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-            ));
+      final controller = (widget.assetPath.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(widget.assetPath), videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true)) : VideoPlayerController.asset(widget.assetPath, videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true)));
       await controller.initialize();
       await controller.setLooping(true);
       await controller.setVolume(0);
@@ -1188,15 +1182,20 @@ class _AdVideoTileState extends State<_AdVideoTile>
       setState(() {
         _controller = controller;
       });
+      _initGuard?.cancel();
       unawaited(controller.play());
     } catch (e) {
       debugPrint('Ad asset failed to load ${widget.assetPath}: $e');
+      if (mounted) {
+        setState(() => _failed = true);
+      }
     }
   }
 
   @override
   void dispose() {
     _controller?.dispose();
+    _initGuard?.cancel();
     super.dispose();
   }
 
@@ -1245,7 +1244,9 @@ class _AdVideoTileState extends State<_AdVideoTile>
             aspectRatio: aspectRatio,
             child: controller != null && controller.value.isInitialized
                 ? VideoPlayer(controller)
-                : const _LoadingAdPlaceholder(),
+                : (_failed
+                    ? const _AdBannerFallback()
+                    : const _LoadingAdPlaceholder()),
           ),
         ),
       ),
@@ -1261,15 +1262,50 @@ class _LoadingAdPlaceholder extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       color: scheme.surface,
-      child: Center(
-        child: Text(
-          'Loading ad video...',
-          style: TextStyle(
-            color: const Color(0xFFFFA000),
-            fontWeight: FontWeight.w600,
+      child: const Center(
+        child: CircularProgressIndicator(strokeWidth: 2.5),
+      ),
+    );
+  }
+}
+
+// Fallback shown if the ad video cannot be played (e.g. unsupported codec on web)
+class _AdBannerFallback extends StatelessWidget {
+  const _AdBannerFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Use an existing bundled image as a visual banner
+        Image.asset(
+          'assets/app_icon/loader.jpg',
+          fit: BoxFit.cover,
+        ),
+        Align(
+          alignment: Alignment.bottomLeft,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Text(
+                  'Tap to view offer',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -1329,7 +1365,7 @@ class _GallerySection extends StatelessWidget {
         Row(
           children: [
             Text(
-              'Latest Images',
+              'Latest Update',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -1351,7 +1387,7 @@ class _GallerySection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         content,
         if (errorMessage != null && hasImages)
           Padding(
@@ -1384,7 +1420,7 @@ class _GallerySliderState extends State<_GallerySlider> {
   @override
   void initState() {
     super.initState();
-    _controller = PageController(viewportFraction: 0.9);
+    _controller = PageController(viewportFraction: 0.96);
   }
 
   @override
@@ -1409,47 +1445,75 @@ class _GallerySliderState extends State<_GallerySlider> {
     final images = widget.images;
     final theme = Theme.of(context);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: 180,
-          child: PageView.builder(
-            controller: _controller,
-            itemCount: images.length,
-            onPageChanged: (index) => setState(() => _currentPage = index),
-            itemBuilder: (context, index) {
-              final image = images[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: _GalleryTile(image: image),
+    final bgGradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        theme.colorScheme.primary.withValues(alpha: 0.12),
+        theme.colorScheme.secondary.withValues(alpha: 0.08),
+      ],
+    );
+
+    const double borderThickness = 10;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: bgGradient,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      clipBehavior: Clip.hardEdge,
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.all(borderThickness),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 200,
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: images.length,
+                  onPageChanged: (index) => setState(() => _currentPage = index),
+                  itemBuilder: (context, index) {
+                    final image = images[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: _GalleryTile(image: image),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(images.length, (index) {
+                  final active = index == _currentPage;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: active ? 14 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: active
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.primary.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  );
+                }),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(images.length, (index) {
-            final active = index == _currentPage;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              width: active ? 14 : 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: active
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.primary.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
-              ),
-            );
-          }),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -1483,7 +1547,9 @@ class _GalleryTile extends StatelessWidget {
             Container(color: placeholderColor),
             Image.network(
               image.url,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
+              alignment: Alignment.center,
+              filterQuality: FilterQuality.medium,
               loadingBuilder: (context, child, progress) {
                 if (progress == null) return child;
                 return Center(
