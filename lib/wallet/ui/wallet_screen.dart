@@ -7,10 +7,10 @@ import 'package:newjuststock/services/session_service.dart';
 import 'package:newjuststock/wallet/services/wallet_service.dart';
 
 // Brand colors
-const _kAppbarOrange = Color(0xFFF57C00);
-const _kPrimaryYellow = Color(0xFFFFD200);
-const _kBalanceBg = Color(0xFFFFF4E5);
-const _kInfoBg = Color(0xFFFFF8EC);
+const _kAppbarOrange = Color(0xFF8B0000);
+const _kPrimaryRed = Color(0xFF8B0000);
+const _kBalanceBg = Colors.white;
+const _kInfoBg = Colors.white;
 const _kTextPrimary = Color(0xFF1F2937);
 const _kTextSecondary = Color(0xFF4B5563);
 
@@ -238,8 +238,8 @@ class _WalletScreenState extends State<WalletScreen> {
                 width: double.infinity,
                 child: FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: _kPrimaryYellow,
-                    foregroundColor: Colors.black87,
+                    backgroundColor: _kPrimaryRed,
+                    foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(50),
                     textStyle: const TextStyle(
                       fontWeight: FontWeight.w900,
@@ -465,7 +465,7 @@ class _WalletScreenState extends State<WalletScreen> {
       body: Column(
         children: [
           if (_verifyingTopUp || _creatingOrder)
-            const LinearProgressIndicator(minHeight: 2, color: _kPrimaryYellow),
+            const LinearProgressIndicator(minHeight: 2, color: _kPrimaryRed),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () => _loadBalance(silently: true),
@@ -536,8 +536,8 @@ class _WalletScreenState extends State<WalletScreen> {
                     width: double.infinity,
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        backgroundColor: _kPrimaryYellow,
-                        foregroundColor: Colors.black87,
+                        backgroundColor: _kPrimaryRed,
+                        foregroundColor: Colors.white,
                         minimumSize: const Size.fromHeight(54),
                         shape: const StadiumBorder(),
                         textStyle: const TextStyle(
@@ -642,8 +642,8 @@ class _QuickChip extends StatelessWidget {
       padding: const EdgeInsets.only(right: 8),
       child: ActionChip(
         visualDensity: VisualDensity.compact,
-        backgroundColor: _kPrimaryYellow.withOpacity(0.18),
-        side: const BorderSide(color: _kPrimaryYellow, width: .6),
+        backgroundColor: _kPrimaryRed.withOpacity(0.18),
+        side: BorderSide(color: _kPrimaryRed, width: .6),
         label: Text(
           label,
           style: const TextStyle(

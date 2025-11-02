@@ -111,12 +111,11 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   Widget build(BuildContext context) {
-    const creamBackground = Color(0xFFFFF8E7);
-    const darkOrange = Color(0xFFE67E22);
-    const yellowButton = Color(0xFFFFD500);
+    const darkRed = Color(0xFF7F0000);
+    const darkerRed = Color(0xFF8B0000);
 
     return Scaffold(
-      backgroundColor: creamBackground,
+      backgroundColor: Colors.white,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -142,7 +141,7 @@ class _SignupPageState extends State<SignupPage> {
                         child: Icon(
                           Icons.person_add_alt_1_outlined,
                           size: 54,
-                          color: darkOrange,
+                          color: darkerRed,
                         ),
                       ),
                       const SizedBox(height: 18),
@@ -216,13 +215,14 @@ class _SignupPageState extends State<SignupPage> {
                       ElevatedButton(
                         onPressed: _submitting ? null : _handleSignup,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: yellowButton,
+                          backgroundColor: darkerRed,
                           minimumSize: const Size.fromHeight(50),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(30),
                           ),
                           shadowColor: Colors.black38,
                           elevation: 4,
+                          foregroundColor: Colors.white,
                         ),
                         child: _submitting
                             ? const SizedBox(
@@ -231,14 +231,14 @@ class _SignupPageState extends State<SignupPage> {
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.black,
+                                    Colors.white,
                                   ),
                                 ),
                               )
                             : const Text(
                                 'Create account',
                                 style: TextStyle(
-                                  color: Colors.black,
+                                  color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),
@@ -260,7 +260,7 @@ class _SignupPageState extends State<SignupPage> {
                             child: const Text(
                               'Sign in',
                               style: TextStyle(
-                                color: darkOrange,
+                                color: darkerRed,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
                               ),
@@ -286,6 +286,8 @@ class _SignupPageState extends State<SignupPage> {
     bool obscure = false,
     TextInputType? inputType,
   }) {
+    const darkRed = Color(0xFF7F0000);
+    const darkerRed = Color(0xFF8B0000);
     return TextFormField(
       controller: controller,
       obscureText: obscure,
@@ -301,7 +303,7 @@ class _SignupPageState extends State<SignupPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE67E22), width: 1.5),
+          borderSide: const BorderSide(color: darkerRed, width: 1.5),
         ),
       ),
     );

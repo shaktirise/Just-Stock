@@ -100,12 +100,11 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    const cream = Color(0xFFFFF8E7);
-    const yellow = Color(0xFFFFD500);
-    const darkOrange = Color(0xFFE67E22);
+    const darkRed = Color(0xFF7F0000);
+    const darkerRed = Color(0xFF8B0000);
 
     return Scaffold(
-      backgroundColor: cream,
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           // 🔶 Curved Header with Highlighted "JustStock"
@@ -122,11 +121,7 @@ class _LoginPageState extends State<LoginPage> {
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFFFFC300), // yellow
-                          Color(0xFFFFA000), // amber
-                          Color(0xFFE67E22), // orange
-                        ],
+                        colors: [darkerRed, darkRed, darkerRed],
                       ),
                     ),
                   ),
@@ -177,8 +172,11 @@ class _LoginPageState extends State<LoginPage> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Icon(Icons.lock_outline_rounded,
-                              size: 48, color: darkOrange),
+                          const Icon(
+                            Icons.lock_outline_rounded,
+                            size: 48,
+                            color: darkerRed,
+                          ),
                           const SizedBox(height: 16),
                           const Text(
                             'Welcome back!',
@@ -259,14 +257,14 @@ class _LoginPageState extends State<LoginPage> {
                           ElevatedButton(
                             onPressed: _submitting ? null : _handleLogin,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: yellow,
+                              backgroundColor: darkerRed,
                               minimumSize: const Size.fromHeight(50),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(28),
                               ),
                               elevation: 4,
                               shadowColor: Colors.black38,
-                              foregroundColor: Colors.black,
+                              foregroundColor: Colors.white,
                               textStyle: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
@@ -278,9 +276,9 @@ class _LoginPageState extends State<LoginPage> {
                                     height: 18,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor:
-                                          AlwaysStoppedAnimation<Color>(
-                                              Colors.black),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.black,
+                                      ),
                                     ),
                                   )
                                 : const Text('Sign In'),
@@ -291,12 +289,14 @@ class _LoginPageState extends State<LoginPage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Text('New here? ',
-                                  style: TextStyle(color: Colors.black87)),
+                              const Text(
+                                'New here? ',
+                                style: TextStyle(color: Colors.black87),
+                              ),
                               TextButton(
                                 onPressed: _openSignup,
                                 style: TextButton.styleFrom(
-                                  foregroundColor: darkOrange,
+                                  foregroundColor: darkerRed,
                                   textStyle: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
@@ -324,6 +324,8 @@ class _LoginPageState extends State<LoginPage> {
     required String label,
     required IconData icon,
   }) {
+    const darkRed = Color(0xFF7F0000);
+    const darkerRed = Color(0xFF8B0000);
     return InputDecoration(
       labelText: label,
       prefixIcon: Icon(icon, color: Colors.black54),
@@ -340,7 +342,7 @@ class _LoginPageState extends State<LoginPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFFE67E22), width: 1.5),
+        borderSide: const BorderSide(color: darkerRed, width: 1.5),
       ),
     );
   }

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -19,19 +21,44 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:newjuststock/features/messages/models/admin_message.dart';
 import 'package:newjuststock/features/messages/presentation/pages/admin_message_page.dart';
 
+// Market data model
+class MarketData {
+  final String symbol;
+  final double price;
+  final double change;
+  final double changePercent;
+  final List<double> chartData;
+
+  MarketData({
+    required this.symbol,
+    required this.price,
+    required this.change,
+    required this.changePercent,
+    required this.chartData,
+  });
+
+  factory MarketData.fromJson(Map<String, dynamic> json) {
+    return MarketData(
+      symbol: json['symbol'] ?? '',
+      price: (json['price'] ?? 0.0).toDouble(),
+      change: (json['change'] ?? 0.0).toDouble(),
+      changePercent: (json['changePercent'] ?? 0.0).toDouble(),
+      chartData: List<double>.from(json['chartData'] ?? []),
+    );
+  }
+}
+
 class HomePage extends StatefulWidget {
   final AuthSession session;
 
-  const HomePage({
-    super.key,
-    required this.session,
-  });
+  const HomePage({super.key, required this.session});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   late AuthSession _session;
 
   static const List<String> _segmentKeys = [
@@ -42,7 +69,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     'commodity',
   ];
 
-  static const Color _segmentBackgroundColor = Color(0xFFF57C00); // Orange shade from screenshot
+  static const Color _segmentBackgroundColor = Color(
+    0xFF8B0000,
+  ); // Dark red shade
 
   static const List<_SegmentDescriptor> _segmentDescriptors = [
     _SegmentDescriptor(
@@ -90,6 +119,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   late final Animation<Offset> _supportNudge;
   bool _hasUnreadSegments = false;
 
+  // Market data
+  Map<String, MarketData> _marketData = {};
+  bool _loadingMarketData = false;
+  String? _marketDataError;
+  Timer? _marketDataTimer;
+
   @override
   void initState() {
     super.initState();
@@ -104,22 +139,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         curve: Curves.easeInOut,
       ),
     );
-    _supportNudge = Tween<Offset>(
-      begin: Offset.zero,
-      end: const Offset(0, -0.06),
-    ).animate(
-      CurvedAnimation(
-        parent: _supportAnimationController,
-        curve: Curves.easeInOut,
-      ),
-    );
+    _supportNudge =
+        Tween<Offset>(begin: Offset.zero, end: const Offset(0, -0.06)).animate(
+          CurvedAnimation(
+            parent: _supportAnimationController,
+            curve: Curves.easeInOut,
+          ),
+        );
     _loadSegments();
     _loadGallery();
     _loadSeenAcks();
+    _loadMarketData();
+    _startMarketDataUpdates();
   }
 
   @override
   void dispose() {
+    _marketDataTimer?.cancel();
     _supportAnimationController.dispose();
     super.dispose();
   }
@@ -139,10 +175,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (!fromSegments) {
       _showSnack('Session expired. Please log in again.');
     }
-    Navigator.of(context).pushAndRemoveUntil(
-      fadeRoute(const LoginPage()),
-      (route) => false,
-    );
+    Navigator.of(
+      context,
+    ).pushAndRemoveUntil(fadeRoute(const LoginPage()), (route) => false);
   }
 
   Future<void> _loadSegments({bool silently = false}) async {
@@ -434,6 +469,91 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     } catch (_) {}
   }
 
+  Future<void> _loadMarketData({bool silently = false}) async {
+    if (!silently) {
+      setState(() {
+        _loadingMarketData = true;
+        _marketDataError = null;
+      });
+    }
+
+    try {
+      // Using Alpha Vantage API for free market data
+      const apiKey = 'demo'; // Replace with actual API key if available
+      final symbols = ['NSE:NIFTY', 'NSE:BANKNIFTY', 'NSE:SENSEX', 'COMMODITY'];
+
+      final Map<String, MarketData> newData = {};
+
+      for (final symbol in symbols) {
+        try {
+          final url = Uri.parse(
+            'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=$symbol&interval=5min&apikey=$apiKey',
+          );
+          final response = await http.get(url);
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final timeSeries =
+                data['Time Series (5min)'] as Map<String, dynamic>?;
+
+            if (timeSeries != null && timeSeries.isNotEmpty) {
+              final latestEntry = timeSeries.entries.first;
+              final latestData = latestEntry.value as Map<String, dynamic>;
+
+              final price =
+                  double.tryParse(latestData['1. open'] ?? '0') ?? 0.0;
+              final previousClose =
+                  double.tryParse(latestData['4. close'] ?? '0') ?? 0.0;
+
+              final change = price - previousClose;
+              final changePercent = previousClose != 0
+                  ? (change / previousClose) * 100
+                  : 0.0;
+
+              // Generate mock chart data (in real app, use historical data)
+              final chartData = List.generate(
+                20,
+                (i) => price + Random().nextDouble() * 100 - 50,
+              );
+
+              newData[symbol] = MarketData(
+                symbol: symbol,
+                price: price,
+                change: change,
+                changePercent: changePercent,
+                chartData: chartData,
+              );
+            }
+          }
+        } catch (e) {
+          debugPrint('Error loading data for $symbol: $e');
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _marketData = newData;
+        _loadingMarketData = false;
+        _marketDataError = newData.isEmpty
+            ? 'Unable to load market data'
+            : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingMarketData = false;
+        _marketDataError = 'Network error: $e';
+      });
+    }
+  }
+
+  void _startMarketDataUpdates() {
+    _marketDataTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _loadMarketData(silently: true);
+    });
+  }
+
   Future<void> _saveAck(String key, String message) async {
     _acknowledgedMessages[key] = message;
     _refreshUnreadIndicators(skipSetState: true);
@@ -500,9 +620,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           fit: BoxFit.contain,
         ),
         flexibleSpace: Container(
-          decoration: BoxDecoration(
-            color: _segmentBackgroundColor,
-          ),
+          decoration: BoxDecoration(color: _segmentBackgroundColor),
         ),
         centerTitle: false,
         actions: [
@@ -528,11 +646,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
             child: InkWell(
               onTap: () async {
-                final updated = await Navigator.of(context).push<AuthSession?>(
-                  fadeRoute(
-                    ProfilePage(session: _session),
-                  ),
-                );
+                final updated = await Navigator.of(
+                  context,
+                ).push<AuthSession?>(fadeRoute(ProfilePage(session: _session)));
                 if (!mounted) return;
                 if (updated != null) {
                   setState(() => _session = updated);
@@ -646,10 +762,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               if (i > 0) SizedBox(width: gap),
                               SizedBox(
                                 width: circleDiameter,
-                               child: _HomeCircleTile(
+                                child: _HomeCircleTile(
                                   title: items[i].title,
                                   icon: items[i].icon,
-                                  backgroundColor: items[i].backgroundColor, // Use backgroundColor
+                                  backgroundColor: items[i]
+                                      .backgroundColor, // Use backgroundColor
                                   diameter: circleDiameter,
                                   hasNotification: _isSegmentUnread(
                                     items[i].segmentKey,
@@ -817,7 +934,8 @@ class _HomeCircleTileState extends State<_HomeCircleTile> {
     final theme = Theme.of(context);
     final title = widget.title;
     final icon = widget.icon;
-    final backgroundColor = widget.backgroundColor; // Use single background color
+    final backgroundColor =
+        widget.backgroundColor; // Use single background color
     final onTap = widget.onTap;
     final diameter = widget.diameter;
     final hasNotification = widget.hasNotification;
@@ -882,7 +1000,9 @@ class _HomeCircleTileState extends State<_HomeCircleTile> {
                               right: diameter * 0.18,
                               child: _NotificationBadge(
                                 iconColor: Colors.white,
-                                backgroundColor: backgroundColor.withValues(alpha: 0.2),
+                                backgroundColor: backgroundColor.withValues(
+                                  alpha: 0.2,
+                                ),
                               ),
                             ),
                         ],
@@ -918,24 +1038,13 @@ class _NotificationBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = backgroundColor;
     if (bg == null) {
-      return Icon(
-        Icons.notifications,
-        color: iconColor,
-        size: 18,
-      );
+      return Icon(Icons.notifications, color: iconColor, size: 18);
     }
 
     return Container(
       padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: bg,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        Icons.notifications,
-        color: iconColor,
-        size: 14,
-      ),
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      child: Icon(Icons.notifications, color: iconColor, size: 14),
     );
   }
 }
@@ -965,7 +1074,9 @@ class _DailyTipChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: _HomePageState._segmentBackgroundColor.withValues(alpha: 0.35),
+                color: _HomePageState._segmentBackgroundColor.withValues(
+                  alpha: 0.35,
+                ),
                 blurRadius: 10,
                 offset: const Offset(0, 5),
               ),
@@ -1058,7 +1169,15 @@ class _AdVideoTileState extends State<_AdVideoTile>
 
   Future<void> _load() async {
     try {
-      final controller = (widget.assetPath.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(widget.assetPath), videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true)) : VideoPlayerController.asset(widget.assetPath, videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true)));
+      final controller = (widget.assetPath.startsWith('http')
+          ? VideoPlayerController.networkUrl(
+              Uri.parse(widget.assetPath),
+              videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+            )
+          : VideoPlayerController.asset(
+              widget.assetPath,
+              videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+            ));
       await controller.initialize();
       await controller.setLooping(true);
       await controller.setVolume(0);
@@ -1352,8 +1471,8 @@ class _GalleryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final placeholderColor =
-        theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
+    final placeholderColor = theme.colorScheme.surfaceContainerHighest
+        .withValues(alpha: 0.4);
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: AspectRatio(
@@ -1438,6 +1557,222 @@ class _GalleryInfoCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MarketDataSection extends StatelessWidget {
+  const _MarketDataSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final homeState = context.findAncestorStateOfType<_HomePageState>()!;
+    final marketData = homeState._marketData;
+    final loading = homeState._loadingMarketData;
+    final error = homeState._marketDataError;
+
+    if (loading && marketData.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 32),
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+        ),
+      );
+    }
+
+    if (error != null && marketData.isEmpty) {
+      return Card(
+        color: Theme.of(
+          context,
+        ).colorScheme.errorContainer.withValues(alpha: 0.4),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.error_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  error,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (marketData.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Market Overview',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.2,
+          ),
+          itemCount: marketData.length,
+          itemBuilder: (context, index) {
+            final entry = marketData.entries.elementAt(index);
+            return _MarketDataCard(data: entry.value);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _MarketDataCard extends StatelessWidget {
+  final MarketData data;
+
+  const _MarketDataCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final isPositive = data.change >= 0;
+    final color = isPositive ? Colors.green : Colors.red;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              data.symbol
+                  .replaceAll('NSE:', '')
+                  .replaceAll('COMMODITY', 'COMM'),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '₹${data.price.toStringAsFixed(2)}',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  isPositive ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 16,
+                  color: color,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${isPositive ? '+' : ''}${data.change.toStringAsFixed(2)} (${data.changePercent.toStringAsFixed(2)}%)',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _SimpleChart(data: data.chartData, color: color),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SimpleChart extends StatelessWidget {
+  final List<double> data;
+  final Color color;
+
+  const _SimpleChart({required this.data, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.isEmpty) return const SizedBox.shrink();
+
+    final dataMin = data.reduce(min);
+    final dataMax = data.reduce(max);
+    final dataRange = dataMax - dataMin;
+
+    return CustomPaint(
+      painter: _ChartPainter(
+        data: data,
+        color: color,
+        min: dataMin,
+        max: dataMax,
+        range: dataRange,
+      ),
+      size: const Size(double.infinity, 40),
+    );
+  }
+}
+
+class _ChartPainter extends CustomPainter {
+  final List<double> data;
+  final Color color;
+  final double min;
+  final double max;
+  final double range;
+
+  _ChartPainter({
+    required this.data,
+    required this.color,
+    required this.min,
+    required this.max,
+    required this.range,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.isEmpty || range == 0) return;
+
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    final width = size.width / (data.length - 1);
+
+    for (int i = 0; i < data.length; i++) {
+      final x = i * width;
+      final y = size.height - ((data[i] - min) / range) * size.height;
+
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 class _AdsSlider extends StatefulWidget {
@@ -1560,5 +1895,3 @@ class _AdsSliderState extends State<_AdsSlider> {
     );
   }
 }
-
-

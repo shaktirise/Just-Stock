@@ -23,11 +23,11 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   /// Brand + neutrals — high contrast
-  static const _kPrimaryYellow = Color(0xFFFFD200);
+  static const _kPrimaryRed = Color(0xFF8B0000);
   // Match Home app bar color
-  static const _kAppbarOrange = Color(0xFFF57C00);
+  static const _kAppbarOrange = Color(0xFF8B0000);
   static const _kCard = Colors.white;
-  static const _kSurface = Color(0xFFF7F7F9);
+  static const _kSurface = Colors.white;
   static const _kOutline = Color(0xFFE6E6EA);
 
   static const _kTextPrimary = Color(0xFF111827);
@@ -339,7 +339,7 @@ class _ProfilePageState extends State<ProfilePage> {
         children: [
           CircleAvatar(
             radius: 28,
-            backgroundColor: _kPrimaryYellow.withOpacity(.25),
+            backgroundColor: _kPrimaryRed.withOpacity(.25),
             child: Text(
               _initial,
               style: theme.textTheme.titleLarge?.copyWith(
@@ -400,7 +400,7 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Container(
                 decoration: BoxDecoration(
-                  color: _kPrimaryYellow.withOpacity(.25),
+                  color: _kPrimaryRed.withOpacity(.25),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 padding: const EdgeInsets.all(12),
@@ -710,7 +710,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // Yellow, bold pill action
+  // Red, bold pill action
   Widget _pillAction({
     required IconData icon,
     required String label,
@@ -721,8 +721,8 @@ class _ProfilePageState extends State<ProfilePage> {
       icon: Icon(icon, size: 18),
       label: Text(label),
       style: FilledButton.styleFrom(
-        backgroundColor: _kPrimaryYellow,
-        foregroundColor: Colors.black87,
+        backgroundColor: _kPrimaryRed,
+        foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
@@ -777,8 +777,8 @@ class _ProfilePageState extends State<ProfilePage> {
               label: const Text('Sign out'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
-                backgroundColor: _kPrimaryYellow,
-                foregroundColor: Colors.black87,
+                backgroundColor: _kPrimaryRed,
+                foregroundColor: Colors.white,
                 textStyle: const TextStyle(fontWeight: FontWeight.w800),
                 shape: const StadiumBorder(),
               ),

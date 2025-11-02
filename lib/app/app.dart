@@ -7,44 +7,44 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Brand palette: Yellow focused
-    // - Primary (bright): #FFD200
-    // - Dark Yellow (header/accent): #F7971E
-    const brandYellow = Color(0xFFFFD200);
-    const brandYellowDark = Color(0xFFF7971E);
+      // Brand palette: Dark Red focused
+    // - Primary (dark red): #7F0000
+    // - Darker Red (header/accent): #8B0000
+    const darkRed = Color(0xFF7F0000);
+    const darkerRed = Color(0xFF8B0000);
     return MaterialApp(
       title: 'JustStock',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // Yellow primary with darker yellow accents; white surfaces
+        // Dark red primary with darker red accents; white surfaces
         colorScheme:
             ColorScheme.fromSeed(
-              seedColor: brandYellow,
+              seedColor: darkRed,
               brightness: Brightness.light,
             ).copyWith(
-              primary: brandYellow,
-              secondary: brandYellowDark,
+              primary: darkRed,
+              secondary: darkerRed,
               background: Colors.white,
               surface: Colors.white,
             ),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
-          backgroundColor: brandYellowDark,
+          backgroundColor: darkerRed,
           foregroundColor: Colors.white,
           elevation: 0,
         ),
-        // Subtle light background so symbol images pop
+        // White background for contrast with dark red elements
         scaffoldBackgroundColor: Colors.white,
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),
           focusedBorder: OutlineInputBorder(
-            borderSide: BorderSide(color: brandYellow, width: 2),
+            borderSide: BorderSide(color: darkRed, width: 2),
           ),
-          floatingLabelStyle: TextStyle(color: brandYellowDark),
+          floatingLabelStyle: TextStyle(color: darkerRed),
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: ButtonStyle(
-            backgroundColor: MaterialStatePropertyAll(brandYellow),
+            backgroundColor: MaterialStatePropertyAll(darkRed),
             foregroundColor: const MaterialStatePropertyAll(Colors.white),
           ),
         ),
