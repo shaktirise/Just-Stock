@@ -518,8 +518,8 @@ class _HomePageState extends State<HomePage>
       // Yahoo Finance APIs (public). First fetch quotes, then small chart data per symbol.
       const symbols = <String, String>{
         'NIFTY 50': '^NSEI',
-        'BANKNIFTY': '^NSEBANK',
-        'SENSEX': '^BSESN',
+        'BANK NIFTY': '^NSEBANK',
+        'STOCKS': '^BSESN',
         'GOLD': 'GC=F',
       };
 
@@ -545,8 +545,8 @@ class _HomePageState extends State<HomePage>
           final items = <String, String>{
             // You can override via --dart-define=TWELVEDATA_SYMBOLS=LABEL:SYMBOL,...
             'NIFTY 50': 'NSE:NIFTY_50',
-            'BANKNIFTY': 'NSE:BANKNIFTY',
-            'SENSEX': 'BSE:SENSEX',
+            'BANK NIFTY': 'NSE:BANKNIFTY',
+            'STOCKS': 'BSE:SENSEX',
             'GOLD': 'XAU/USD',
           };
           // Parse overrides if provided
@@ -812,32 +812,30 @@ class _HomePageState extends State<HomePage>
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: _segmentBackgroundColor,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         title: Image.asset(
           'assets/app_icon/logo.png',
           height: 28,
           fit: BoxFit.contain,
         ),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(color: _segmentBackgroundColor),
-        ),
         centerTitle: false,
-          actions: [
-            IconButton(
-              tooltip: 'Daily Tip',
-              icon: const Icon(Icons.lightbulb_outline),
-              onPressed: () {
-                Navigator.of(context).push(fadeRoute(const DailyTipPage()));
-              },
-            ),
-          ],
+        actions: [
+          IconButton(
+            tooltip: 'Daily Tip',
+            icon: Icon(Icons.lightbulb_outline, color: _segmentBackgroundColor),
+            onPressed: () => Navigator.of(context).push(fadeRoute(const DailyTipPage())),
+          ),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final itemCount = items.length;
           // Add more gap so icons align nicely on mobile
-          const double baseGap = 18.0;
+          const double baseGap = 22.0;
           final gap = itemCount > 1 ? baseGap : 0.0;
           final availableRowWidth = (width - 32).clamp(0.0, 520.0);
           final rawDiameter = itemCount > 0
@@ -1899,7 +1897,7 @@ class _MarketDataSection extends StatelessWidget {
     final error = homeState._marketDataError;
 
     // Always show 4 squares; use live data when available otherwise dummy
-    List<String> labels = const ['NIFTY 50', 'BANKNIFTY', 'SENSEX', 'GOLD'];
+    List<String> labels = const ['NIFTY 50', 'BANK NIFTY', 'STOCKS', 'GOLD'];
     final rnd = Random(DateTime.now().day);
     List<MarketData> items = labels.map((label) {
       final d = marketData[label];
@@ -1907,8 +1905,8 @@ class _MarketDataSection extends StatelessWidget {
       // dummy data
       final base = switch (label) {
         'NIFTY 50' => 24000.0,
-        'BANKNIFTY' => 51000.0,
-        'SENSEX' => 79500.0,
+        'BANK NIFTY' => 51000.0,
+        'STOCKS' => 79500.0,
         _ => 62000.0,
       };
       final change = (rnd.nextDouble() - 0.5) * (label == 'GOLD' ? 200 : 400);
@@ -1944,13 +1942,13 @@ class _MarketDataSection extends StatelessWidget {
             crossAxisCount: 2,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-              // Make tiles a little larger/taller
-              childAspectRatio: 1.2,
+              // More compact tiles without charts
+              childAspectRatio: 1.6,
           ),
           itemCount: items.length,
           itemBuilder: (context, index) {
             final item = items[index];
-            return _MarketDataCard(
+            return _MarketDataCardV2(
               data: item,
               onTap: () => Navigator.of(context).push(
                 fadeRoute(_MarketDetailPage(label: item.symbol)),
@@ -1969,21 +1967,32 @@ class _MarketDataCard extends StatelessWidget {
 
   const _MarketDataCard({required this.data, this.onTap});
 
+  static String _formatNumber(double v) {
+    final s = v.toStringAsFixed(2);
+    final parts = s.split('.');
+    final re = RegExp(r'\B(?=(\d{3})+(?!\d))');
+    final intPart = parts[0].replaceAllMapped(re, (m) => ',');
+    return '${intPart}.${parts[1]}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isPositive = data.change >= 0;
     final color = isPositive ? Colors.green : Colors.red;
 
       return Card(
-        elevation: 2,
+        elevation: 0,
         color: Colors.white,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Colors.black12),
+        ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1991,44 +2000,127 @@ class _MarketDataCard extends StatelessWidget {
               data.symbol,
               style: Theme.of(context)
                   .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Rs ${data.price.toStringAsFixed(2)}',
-              style: Theme.of(context)
-                  .textTheme
                   .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+                  ?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                    color: Colors.black87,
+                  ),
             ),
+            const SizedBox(height: 6),
             Row(
               children: [
-                Icon(
-                  isPositive ? Icons.arrow_upward : Icons.arrow_downward,
-                  size: 16,
-                  color: color,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: Text(
+                    '₹ ${data.price.toStringAsFixed(2)}',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  '${isPositive ? '+' : ''}${data.change.toStringAsFixed(2)} (${data.changePercent.toStringAsFixed(2)}%)',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w600,
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: (isPositive ? Colors.green : Colors.red).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(isPositive ? Icons.arrow_upward : Icons.arrow_downward, size: 14, color: color),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${isPositive ? '+' : ''}${data.change.toStringAsFixed(2)} (${data.changePercent.toStringAsFixed(2)}%)',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color, fontWeight: FontWeight.w700),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 52,
-                child: _SimpleChart(data: data.chartData, color: color),
-              ),
             ],
           ),
         ),
         ),
       );
+  }
+}
+
+class _MarketDataCardV2 extends StatelessWidget {
+  final MarketData data;
+  final VoidCallback? onTap;
+
+  const _MarketDataCardV2({required this.data, this.onTap});
+
+  static String _formatNumber(double v) {
+    final s = v.toStringAsFixed(2);
+    final parts = s.split('.');
+    final re = RegExp(r'\B(?=(\d{3})+(?!\d))');
+    final intPart = parts[0].replaceAllMapped(re, (m) => ',');
+    return '${intPart}.${parts[1]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isPositive = data.change >= 0;
+    final color = isPositive ? Colors.green : Colors.red;
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.black12),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                data.symbol,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                      color: Colors.black87,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Text(
+                    _MarketDataCardV2._formatNumber(data.price),
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '${isPositive ? '+' : ''}${data.change.toStringAsFixed(2)} (${data.changePercent.toStringAsFixed(2)}%)',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -2452,5 +2544,3 @@ class _AdsSliderState extends State<_AdsSlider> {
     );
   }
 }
-
-
