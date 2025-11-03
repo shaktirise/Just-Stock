@@ -20,6 +20,8 @@ import 'package:newjuststock/wallet/services/wallet_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:newjuststock/features/messages/models/admin_message.dart';
 import 'package:newjuststock/features/messages/presentation/pages/admin_message_page.dart';
+import 'package:newjuststock/features/messages/services/advice_service.dart';
+import 'package:newjuststock/features/messages/presentation/pages/advice_list_page.dart';
 
 // Market data model
 class MarketData {
@@ -62,10 +64,14 @@ class _HomePageState extends State<HomePage>
   late AuthSession _session;
 
   static const List<String> _segmentKeys = [
-    'nifty',
-    'banknifty',
     'stocks',
-    'sensex',
+    'future',
+    'options',
+    'commodity',
+  ];
+  // Only fetch segments for keys supported by backend segments API to avoid noise.
+  static const List<String> _segmentFetchKeys = [
+    'stocks',
     'commodity',
   ];
 
@@ -75,39 +81,36 @@ class _HomePageState extends State<HomePage>
 
   static const List<_SegmentDescriptor> _segmentDescriptors = [
     _SegmentDescriptor(
-      key: 'nifty',
-      title: 'NIFTY',
-      icon: Icons.trending_up,
-      tone: _SegmentTone.primary,
-    ),
-    _SegmentDescriptor(
-      key: 'banknifty',
-      title: 'BANKNIFTY',
-      icon: Icons.account_balance,
-      tone: _SegmentTone.secondary,
-    ),
-    _SegmentDescriptor(
       key: 'stocks',
       title: 'STOCKS',
       icon: Icons.auto_graph,
       tone: _SegmentTone.primary,
     ),
     _SegmentDescriptor(
-      key: 'sensex',
-      title: 'SENSEX',
-      icon: Icons.show_chart,
+      key: 'future',
+      title: 'FUTURE',
+      icon: Icons.trending_up,
       tone: _SegmentTone.secondary,
+    ),
+    _SegmentDescriptor(
+      key: 'options',
+      title: 'OPTIONS',
+      icon: Icons.swap_vert_circle_outlined,
+      tone: _SegmentTone.primary,
     ),
     _SegmentDescriptor(
       key: 'commodity',
       title: 'COMMODITY',
       icon: Icons.analytics_outlined,
-      tone: _SegmentTone.primary,
+      tone: _SegmentTone.secondary,
     ),
   ];
 
   final Map<String, SegmentMessage> _segmentMessages = {};
   final Map<String, String> _acknowledgedMessages = {};
+  // Advice V2 latest per category (canonical uppercase)
+  final Map<String, String> _latestAdviceV2Ids = {};
+  final Map<String, String> _ackAdviceV2Ids = {};
   bool _loadingSegments = false;
   String? _segmentsError;
 
@@ -124,6 +127,7 @@ class _HomePageState extends State<HomePage>
   bool _loadingMarketData = false;
   String? _marketDataError;
   Timer? _marketDataTimer;
+  Timer? _adviceLatestTimer;
 
   @override
   void initState() {
@@ -147,15 +151,19 @@ class _HomePageState extends State<HomePage>
           ),
         );
     _loadSegments();
+    _loadAdviceV2Latest();
     _loadGallery();
     _loadSeenAcks();
+    _loadAdviceV2Acks();
     _loadMarketData();
     _startMarketDataUpdates();
+    _startAdviceLatestUpdates();
   }
 
   @override
   void dispose() {
     _marketDataTimer?.cancel();
+    _adviceLatestTimer?.cancel();
     _supportAnimationController.dispose();
     super.dispose();
   }
@@ -201,7 +209,7 @@ class _HomePageState extends State<HomePage>
     _session = refreshedSession;
 
     final result = await SegmentService.fetchSegments(
-      _segmentKeys,
+      _segmentFetchKeys,
       token: _accessToken,
     );
 
@@ -231,7 +239,7 @@ class _HomePageState extends State<HomePage>
         }
       }
 
-      final missingKeys = _segmentKeys
+      final missingKeys = _segmentFetchKeys
           .where((key) => !segments.containsKey(key))
           .toList();
       if (segments.isEmpty) {
@@ -252,7 +260,7 @@ class _HomePageState extends State<HomePage>
           'Unable to fetch the latest market updates. Please try again.',
         );
       } else {
-        final missingKeys = _segmentKeys
+        final missingKeys = _segmentFetchKeys
             .where((key) => !segments.containsKey(key))
             .toList();
         if (missingKeys.isNotEmpty) {
@@ -260,6 +268,26 @@ class _HomePageState extends State<HomePage>
         }
       }
     }
+  }
+
+  Future<void> _loadAdviceV2Latest() async {
+    final refreshedSession = await SessionService.ensureSession();
+    if (!mounted) return;
+    if (refreshedSession == null) {
+      await _handleSessionExpired(fromSegments: true);
+      return;
+    }
+    _session = refreshedSession;
+    const cats = ['STOCKS', 'FUTURE', 'OPTIONS', 'COMMODITY'];
+    for (final cat in cats) {
+      try {
+        final res = await AdviceService.fetchLatest(category: cat, token: _accessToken);
+        if (res.ok && res.data != null) {
+          _latestAdviceV2Ids[cat] = res.data!.id;
+        }
+      } catch (_) {}
+    }
+    if (mounted) _refreshUnreadIndicators(skipSetState: false);
   }
 
   Future<void> _loadGallery({bool silently = false}) async {
@@ -320,7 +348,7 @@ class _HomePageState extends State<HomePage>
   }
 
   void _refreshUnreadIndicators({bool skipSetState = false}) {
-    final hasUnread = _segmentKeys.any(_isSegmentUnread);
+    final hasUnread = _segmentKeys.any(_isSegmentUnread) || _hasUnreadAdviceV2();
     if (_hasUnreadSegments == hasUnread) {
       if (!hasUnread) {
         _updateSupportAnimation();
@@ -347,69 +375,54 @@ class _HomePageState extends State<HomePage>
     return seenMessage != message;
   }
 
-  // New method to check for admin messages and update the indicator
+  bool _hasUnreadAdviceV2() {
+    for (final entry in _latestAdviceV2Ids.entries) {
+      final seenId = _ackAdviceV2Ids[entry.key];
+      if (seenId == null || seenId != entry.value) return true;
+    }
+    return false;
+  }
+
+  bool _isAdviceV2KeyUnread(String segmentKey) {
+    final cat = _canonicalCategory(segmentKey);
+    if (cat == null) return false;
+    final latest = _latestAdviceV2Ids[cat];
+    if (latest == null || latest.isEmpty) return false;
+    final seen = _ackAdviceV2Ids[cat];
+    return seen == null || seen != latest;
+  }
+
+  // Open category list of advice (pay-per-message)
   Future<void> _handleSegmentTap(_HomeItem item) async {
-    final segment = _segmentMessages[item.segmentKey];
-    final message = segment?.message.trim() ?? '';
-    if (segment == null || message.isEmpty) {
-      _showSnack('No update for ${item.title} yet.');
+    final category = _canonicalCategory(item.segmentKey);
+    if (category == null) {
+      _showSnack('Invalid category');
       return;
     }
-
-    final alreadyUnlocked = _acknowledgedMessages[item.segmentKey] == message;
-    if (!alreadyUnlocked) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Unlock ${item.title}?'),
-          content: const Text(
-            'Unlock this message for Rs 100. Amount will be debited from your wallet.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Pay Rs 100'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
-
-      final result = await WalletService.debit(
-        amountInRupees: 100,
-        note: 'Unlock ${item.segmentKey} message',
-        token: _accessToken,
-      );
-      if (!result.ok) {
-        _showSnack(result.message);
-        return;
-      }
-
-      await _saveAck(item.segmentKey, message);
-    } else {
-      _refreshUnreadIndicators(skipSetState: true);
+    final latestId = _latestAdviceV2Ids[category];
+    if (latestId != null && latestId.isNotEmpty) {
+      await _saveAdviceV2Ack(category, latestId);
     }
-
-    final label = segment.label.trim().isEmpty ? item.title : segment.label;
-    if (!mounted) return;
     await Navigator.of(context).push(
-      fadeRoute(
-        AdminMessagePage(
-          message: AdminMessage(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            title: label,
-            body: message,
-            createdAt: segment.updatedAt ?? DateTime.now(),
-          ),
-        ),
-      ),
+      fadeRoute(AdviceListPage(category: category, title: item.title)),
     );
-    if (!mounted) return;
-    _refreshUnreadIndicators();
+  }
+
+  String? _canonicalCategory(String key) {
+    switch (key.toLowerCase()) {
+      case 'stocks':
+        return 'STOCKS';
+      case 'future':
+      case 'futures':
+        return 'FUTURE';
+      case 'options':
+      case 'option':
+        return 'OPTIONS';
+      case 'commodity':
+      case 'comodity':
+        return 'COMMODITY';
+    }
+    return null;
   }
 
   void _showSnack(String message) {
@@ -462,6 +475,27 @@ class _HomePageState extends State<HomePage>
       if (!mounted) return;
       setState(() {
         _acknowledgedMessages
+          ..clear()
+          ..addAll(parsed);
+        _refreshUnreadIndicators(skipSetState: true);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _loadAdviceV2Acks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('advice_v2_seen_ids_v1');
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      final parsed = <String, String>{};
+      for (final e in map.entries) {
+        final v = e.value?.toString() ?? '';
+        if (v.isNotEmpty) parsed[e.key] = v;
+      }
+      if (!mounted) return;
+      setState(() {
+        _ackAdviceV2Ids
           ..clear()
           ..addAll(parsed);
         _refreshUnreadIndicators(skipSetState: true);
@@ -554,6 +588,15 @@ class _HomePageState extends State<HomePage>
     });
   }
 
+  void _startAdviceLatestUpdates() {
+    _adviceLatestTimer?.cancel();
+    _adviceLatestTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
+      try {
+        await _loadAdviceV2Latest();
+      } catch (_) {}
+    });
+  }
+
   Future<void> _saveAck(String key, String message) async {
     _acknowledgedMessages[key] = message;
     _refreshUnreadIndicators(skipSetState: true);
@@ -570,6 +613,22 @@ class _HomePageState extends State<HomePage>
     }
     map[key] = message;
     await prefs.setString('segment_ack_v1', jsonEncode(map));
+  }
+
+  Future<void> _saveAdviceV2Ack(String category, String id) async {
+    _ackAdviceV2Ids[category] = id;
+    _refreshUnreadIndicators(skipSetState: true);
+    if (mounted) setState(() {});
+    final prefs = await SharedPreferences.getInstance();
+    Map<String, dynamic> map = {};
+    final current = prefs.getString('advice_v2_seen_ids_v1');
+    if (current != null && current.isNotEmpty) {
+      try {
+        map = Map<String, dynamic>.from(jsonDecode(current) as Map);
+      } catch (_) {}
+    }
+    map[category] = id;
+    await prefs.setString('advice_v2_seen_ids_v1', jsonEncode(map));
   }
 
   Future<void> _launchSupportChat() async {
@@ -702,6 +761,7 @@ class _HomePageState extends State<HomePage>
                 await Future.wait<void>([
                   _loadSegments(silently: true),
                   _loadGallery(silently: true),
+                  _loadAdviceV2Latest(),
                 ]);
               },
               child: SingleChildScrollView(
@@ -769,8 +829,9 @@ class _HomePageState extends State<HomePage>
                                       .backgroundColor, // Use backgroundColor
                                   diameter: circleDiameter,
                                   hasNotification: _isSegmentUnread(
-                                    items[i].segmentKey,
-                                  ),
+                                        items[i].segmentKey,
+                                      ) ||
+                                      _isAdviceV2KeyUnread(items[i].segmentKey),
                                   onTap: () => _handleSegmentTap(items[i]),
                                 ),
                               ),

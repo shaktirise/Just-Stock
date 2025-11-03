@@ -486,11 +486,22 @@ class AuthService {
     AuthSession? existing,
   }) async {
     try {
-      final response = await http.post(
-        uri,
-        headers: _headers(),
-        body: jsonEncode(payload),
-      );
+      // Warm up the backend (useful for cold starts on free hosting)
+      try {
+        final warmup = await http
+            .get(ApiConfig.buildUri('/'))
+            .timeout(const Duration(seconds: 10));
+        // ignore: unused_local_variable
+        final _ = warmup.statusCode;
+      } catch (_) {}
+
+      final response = await http
+          .post(
+            uri,
+            headers: _headers(),
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 30));
       final status = response.statusCode;
       final json = _decodeJson(response.body);
 
