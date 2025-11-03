@@ -1,0 +1,300 @@
+      );
+    }
+
+    if (marketData.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            kIsWeb
+                ? 'Market data unavailable on web. Add --dart-define=TWELVEDATA_API_KEY=YOUR_KEY to use a web-friendly API, or run on device.'
+                : 'Market data unavailable right now. Pull to refresh.',
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Market Overview',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.2,
+          ),
+          itemCount: marketData.length,
+          itemBuilder: (context, index) {
+            final entry = marketData.entries.elementAt(index);
+            return _MarketDataCard(data: entry.value);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _MarketDataCard extends StatelessWidget {
+  final MarketData data;
+
+  const _MarketDataCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final isPositive = data.change >= 0;
+    final color = isPositive ? Colors.green : Colors.red;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              data.symbol,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Rs ${data.price.toStringAsFixed(2)}',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            Row(
+              children: [
+                Icon(
+                  isPositive ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 16,
+                  color: color,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${isPositive ? '+' : ''}${data.change.toStringAsFixed(2)} (${data.changePercent.toStringAsFixed(2)}%)',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _SimpleChart(data: data.chartData, color: color),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SimpleChart extends StatelessWidget {
+  final List<double> data;
+  final Color color;
+
+  const _SimpleChart({required this.data, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.isEmpty) return const SizedBox.shrink();
+
+    final dataMin = data.reduce(min);
+    final dataMax = data.reduce(max);
+    final dataRange = dataMax - dataMin;
+
+    return CustomPaint(
+      painter: _ChartPainter(
+        data: data,
+        color: color,
+        min: dataMin,
+        max: dataMax,
+        range: dataRange,
+      ),
+      size: const Size(double.infinity, 40),
+    );
+  }
+}
+
+class _ChartPainter extends CustomPainter {
+  final List<double> data;
+  final Color color;
+  final double min;
+  final double max;
+  final double range;
+
+  _ChartPainter({
+    required this.data,
+    required this.color,
+    required this.min,
+    required this.max,
+    required this.range,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.isEmpty || range == 0) return;
+
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    final width = size.width / (data.length - 1);
+
+    for (int i = 0; i < data.length; i++) {
+      final x = i * width;
+      final y = size.height - ((data[i] - min) / range) * size.height;
+
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class _AdsSlider extends StatefulWidget {
+  final List<String> assetPaths;
+
+  const _AdsSlider({Key? key, required this.assetPaths}) : super(key: key);
+
+  @override
+  State<_AdsSlider> createState() => _AdsSliderState();
+}
+
+class _AdsSliderState extends State<_AdsSlider> {
+  late final PageController _pageController;
+  int _index = 0;
+  Timer? _timer;
+  List<String> _validPaths = const [];
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(viewportFraction: 0.95);
+    _prepareAssets();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AdsSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.assetPaths.join('|') != widget.assetPaths.join('|')) {
+      _timer?.cancel();
+      _prepareAssets();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _prepareAssets() async {
+    final deduped = widget.assetPaths.toSet().toList();
+    if (!mounted) return;
+    setState(() {
+      _validPaths = deduped.isEmpty ? widget.assetPaths : deduped;
+      _index = 0;
+      _ready = true;
+    });
+    _startAutoSlide();
+  }
+
+  void _startAutoSlide() {
+    _timer?.cancel();
+    if (_validPaths.length <= 1) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (!mounted || !_pageController.hasClients) return;
+        final current = _pageController.page?.round() ?? _index;
+        final lastIndex = _validPaths.length - 1;
+        if (current >= lastIndex) {
+          _pageController.animateToPage(
+            0,
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeInOut,
+          );
+        } else {
+          _pageController.nextPage(
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return const SizedBox(
+        height: 180,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final paths = _validPaths;
+    final dotActive = Theme.of(context).colorScheme.primary;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 180,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: paths.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (context, i) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _AdVideoTile(key: ValueKey(paths[i]), assetPath: paths[i]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(paths.length, (i) {
+            final active = i == _index;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: active ? 16 : 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: active ? dotActive : dotActive.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(10),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}

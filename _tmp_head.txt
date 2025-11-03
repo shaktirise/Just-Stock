@@ -1,0 +1,300 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:video_player/video_player.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:newjuststock/core/navigation/fade_route.dart';
+import 'package:newjuststock/features/auth/presentation/pages/login_page.dart';
+import 'package:newjuststock/features/profile/presentation/pages/profile_page.dart';
+import 'package:newjuststock/features/profile/presentation/pages/referral_earnings_page.dart';
+import 'package:newjuststock/services/auth_service.dart';
+import 'package:newjuststock/services/session_service.dart';
+import 'package:newjuststock/services/segment_service.dart';
+import 'package:newjuststock/services/gallery_service.dart';
+import 'package:newjuststock/services/support_config.dart';
+import 'package:newjuststock/wallet/ui/wallet_screen.dart';
+import 'package:newjuststock/wallet/services/wallet_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:newjuststock/features/messages/models/admin_message.dart';
+import 'package:newjuststock/features/messages/presentation/pages/admin_message_page.dart';
+import 'package:newjuststock/features/messages/services/advice_service.dart';
+import 'package:newjuststock/features/messages/presentation/pages/advice_list_page.dart';
+
+// Market data model
+class MarketData {
+  final String symbol;
+  final double price;
+  final double change;
+  final double changePercent;
+  final List<double> chartData;
+
+  MarketData({
+    required this.symbol,
+    required this.price,
+    required this.change,
+    required this.changePercent,
+    required this.chartData,
+  });
+
+  factory MarketData.fromJson(Map<String, dynamic> json) {
+    return MarketData(
+      symbol: json['symbol'] ?? '',
+      price: (json['price'] ?? 0.0).toDouble(),
+      change: (json['change'] ?? 0.0).toDouble(),
+      changePercent: (json['changePercent'] ?? 0.0).toDouble(),
+      chartData: List<double>.from(json['chartData'] ?? []),
+    );
+  }
+}
+
+class HomePage extends StatefulWidget {
+  final AuthSession session;
+
+  const HomePage({super.key, required this.session});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
+  late AuthSession _session;
+
+  static const List<String> _segmentKeys = [
+    'stocks',
+    'future',
+    'options',
+    'commodity',
+  ];
+  // Only fetch segments for keys supported by backend segments API to avoid noise.
+  static const List<String> _segmentFetchKeys = [
+    'stocks',
+    'commodity',
+  ];
+
+  static const Color _segmentBackgroundColor = Color(
+    0xFF8B0000,
+  ); // Dark red shade
+
+  static const List<_SegmentDescriptor> _segmentDescriptors = [
+    _SegmentDescriptor(
+      key: 'stocks',
+      title: 'STOCKS',
+      icon: Icons.auto_graph,
+      tone: _SegmentTone.primary,
+    ),
+    _SegmentDescriptor(
+      key: 'future',
+      title: 'FUTURE',
+      icon: Icons.trending_up,
+      tone: _SegmentTone.secondary,
+    ),
+    _SegmentDescriptor(
+      key: 'options',
+      title: 'OPTIONS',
+      icon: Icons.swap_vert_circle_outlined,
+      tone: _SegmentTone.primary,
+    ),
+    _SegmentDescriptor(
+      key: 'commodity',
+      title: 'COMMODITY',
+      icon: Icons.analytics_outlined,
+      tone: _SegmentTone.secondary,
+    ),
+  ];
+
+  final Map<String, SegmentMessage> _segmentMessages = {};
+  final Map<String, String> _acknowledgedMessages = {};
+  // Advice V2 latest per category (canonical uppercase)
+  final Map<String, String> _latestAdviceV2Ids = {};
+  final Map<String, String> _ackAdviceV2Ids = {};
+  bool _loadingSegments = false;
+  String? _segmentsError;
+
+  List<GalleryImage> _galleryImages = const [];
+  bool _loadingGallery = false;
+  String? _galleryError;
+  late final AnimationController _supportAnimationController;
+  late final Animation<double> _supportPulse;
+  late final Animation<Offset> _supportNudge;
+  bool _hasUnreadSegments = false;
+
+  // Market data
+  Map<String, MarketData> _marketData = {};
+  bool _loadingMarketData = false;
+  String? _marketDataError;
+  Timer? _marketDataTimer;
+  Timer? _adviceLatestTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = widget.session;
+    _supportAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
+    _supportPulse = Tween<double>(begin: 1.0, end: 1.08).animate(
+      CurvedAnimation(
+        parent: _supportAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _supportNudge =
+        Tween<Offset>(begin: Offset.zero, end: const Offset(0, -0.06)).animate(
+          CurvedAnimation(
+            parent: _supportAnimationController,
+            curve: Curves.easeInOut,
+          ),
+        );
+    _loadSegments();
+    _loadAdviceV2Latest();
+    _loadGallery();
+    _loadSeenAcks();
+    _loadAdviceV2Acks();
+    _loadMarketData();
+    _startMarketDataUpdates();
+    _startAdviceLatestUpdates();
+  }
+
+  @override
+  void dispose() {
+    _marketDataTimer?.cancel();
+    _adviceLatestTimer?.cancel();
+    _supportAnimationController.dispose();
+    super.dispose();
+  }
+
+  String get _displayName {
+    final trimmed = _session.user.name.trim();
+    return trimmed.isEmpty ? 'User' : trimmed;
+  }
+
+  String get _initial => _displayName[0].toUpperCase();
+
+  String get _accessToken => _session.accessToken.trim();
+
+  Future<void> _handleSessionExpired({bool fromSegments = false}) async {
+    await SessionService.clearSession();
+    if (!mounted) return;
+    if (!fromSegments) {
+      _showSnack('Session expired. Please log in again.');
+    }
+    Navigator.of(
+      context,
+    ).pushAndRemoveUntil(fadeRoute(const LoginPage()), (route) => false);
+  }
+
+  Future<void> _loadSegments({bool silently = false}) async {
+    if (!silently) {
+      setState(() {
+        _loadingSegments = true;
+        _segmentsError = null;
+      });
+    }
+
+    final refreshedSession = await SessionService.ensureSession();
+    if (!mounted) return;
+    if (refreshedSession == null) {
+      setState(() {
+        _loadingSegments = false;
+        _segmentsError = 'Session expired. Please log in again.';
+      });
+      await _handleSessionExpired(fromSegments: true);
+      return;
+    }
+    _session = refreshedSession;
+
+    final result = await SegmentService.fetchSegments(
+      _segmentFetchKeys,
+      token: _accessToken,
+    );
+
+    if (!mounted) return;
+
+    if (result.unauthorized) {
+      if (!silently) _showSnack('Session expired. Please log in again.');
+      setState(() {
+        _loadingSegments = false;
+        _segmentsError = 'Session expired. Please log in again.';
+      });
+      await _handleSessionExpired(fromSegments: true);
+      return;
+    }
+
+    final segments = result.segments;
+
+    setState(() {
+      _loadingSegments = false;
+
+      if (segments.isNotEmpty) {
+        for (final entry in segments.entries) {
+          _segmentMessages[entry.key] = entry.value;
+          if (!entry.value.hasMessage) {
+            _acknowledgedMessages.remove(entry.key);
+          }
+        }
+      }
+
+      final missingKeys = _segmentFetchKeys
+          .where((key) => !segments.containsKey(key))
+          .toList();
+      if (segments.isEmpty) {
+        _segmentsError =
+            'Unable to fetch market updates right now. Pull to refresh to try again.';
+      } else if (missingKeys.isNotEmpty) {
+        _segmentsError =
+            'Some market updates are unavailable. Pull to refresh to retry.';
+      } else {
+        _segmentsError = null;
+      }
+      _refreshUnreadIndicators(skipSetState: true);
+    });
+
+    if (!silently) {
+      if (segments.isEmpty) {
+        _showSnack(
+          'Unable to fetch the latest market updates. Please try again.',
+        );
+      } else {
+        final missingKeys = _segmentFetchKeys
+            .where((key) => !segments.containsKey(key))
+            .toList();
+        if (missingKeys.isNotEmpty) {
+          _showSnack('Some market updates could not be refreshed.');
+        }
+      }
+    }
+  }
+
+  Future<void> _loadAdviceV2Latest() async {
+    final refreshedSession = await SessionService.ensureSession();
+    if (!mounted) return;
+    if (refreshedSession == null) {
+      await _handleSessionExpired(fromSegments: true);
+      return;
+    }
+    _session = refreshedSession;
+    const cats = ['STOCKS', 'FUTURE', 'OPTIONS', 'COMMODITY'];
+    for (final cat in cats) {
+      try {
+        final res = await AdviceService.fetchLatest(category: cat, token: _accessToken);
+        if (res.ok && res.data != null) {
+          _latestAdviceV2Ids[cat] = res.data!.id;
+        }
+      } catch (_) {}
+    }
+    if (mounted) _refreshUnreadIndicators(skipSetState: false);
+  }
+
+  Future<void> _loadGallery({bool silently = false}) async {
+    if (!silently) {
+      setState(() {
+        _galleryError = null;
+      });
+    }

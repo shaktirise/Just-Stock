@@ -72,6 +72,7 @@ flutter:
     - assets/app_icon/
     - assets/help-icon.png
     - assets/add/
+    - assets/icons/
 
 # Launcher icon configuration
 flutter_launcher_icons:
