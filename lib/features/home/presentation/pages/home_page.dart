@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:newjuststock/core/navigation/fade_route.dart';
 import 'package:newjuststock/features/auth/presentation/pages/login_page.dart';
 import 'package:newjuststock/features/profile/presentation/pages/profile_page.dart';
+import 'package:newjuststock/features/profile/presentation/pages/referral_earnings_page.dart';
 import 'package:newjuststock/services/auth_service.dart';
 import 'package:newjuststock/services/session_service.dart';
 import 'package:newjuststock/services/segment_service.dart';
@@ -512,55 +514,133 @@ class _HomePageState extends State<HomePage>
     }
 
     try {
-      // Using Alpha Vantage API for free market data
-      const apiKey = 'demo'; // Replace with actual API key if available
-      final symbols = ['NSE:NIFTY', 'NSE:BANKNIFTY', 'NSE:SENSEX', 'COMMODITY'];
+      // Yahoo Finance APIs (public). First fetch quotes, then small chart data per symbol.
+      const symbols = <String, String>{
+        'NIFTY 50': '^NSEI',
+        'BANKNIFTY': '^NSEBANK',
+        'SENSEX': '^BSESN',
+        'GOLD': 'GC=F',
+      };
+
+      final Map<String, String> symbolToLabel = {
+        for (final e in symbols.entries) e.value: e.key,
+      };
 
       final Map<String, MarketData> newData = {};
 
-      for (final symbol in symbols) {
+      String _cors(String url) => kIsWeb ? 'https://cors.isomorphic-git.org/' + url : url;
+
+      // If running on web and a Twelve Data API key is supplied via --dart-define,
+      // prefer it because it supports browser CORS reliably.
+      const tdKey = String.fromEnvironment('TWELVEDATA_API_KEY', defaultValue: '');
+      final tdSymbolsCsv = const String.fromEnvironment(
+        'TWELVEDATA_SYMBOLS',
+        defaultValue: 'NSE:NIFTY_50,NSE:BANKNIFTY,BSE:SENSEX,COMMODITY:GOLD',
+      );
+
+      // Try Twelve Data on web when key is available
+      if (kIsWeb && tdKey.isNotEmpty) {
+        try {
+          final items = <String, String>{
+            // You can override via --dart-define=TWELVEDATA_SYMBOLS=LABEL:SYMBOL,...
+            'NIFTY 50': 'NSE:NIFTY_50',
+            'BANKNIFTY': 'NSE:BANKNIFTY',
+            'SENSEX': 'BSE:SENSEX',
+            'GOLD': 'XAU/USD',
+          };
+          // Parse overrides if provided
+          if (tdSymbolsCsv.isNotEmpty) {
+            for (final raw in tdSymbolsCsv.split(',')) {
+              final r = raw.trim();
+              if (r.isEmpty) continue;
+              final parts = r.split(':');
+              if (parts.length >= 2) {
+                final label = parts.first.trim();
+                final symbol = parts.sublist(1).join(':').trim();
+                if (label.isNotEmpty && symbol.isNotEmpty) {
+                  items[label] = symbol;
+                }
+              }
+            }
+          }
+          await _fetchTwelveData(items, tdKey, newData);
+        } catch (e) {
+          debugPrint('Twelve Data fetch failed: $e');
+        }
+      }
+
+      // 1) Quotes (Yahoo)
+      final symbolsCsv = symbols.values.join(',');
+      try {
+        final quoteUrl = Uri.parse(
+          _cors('https://query1.finance.yahoo.com/v7/finance/quote?symbols=' + symbolsCsv),
+        );
+        final res = await http.get(quoteUrl);
+        if (res.statusCode == 200) {
+          final body = jsonDecode(res.body) as Map<String, dynamic>;
+          final results = (body['quoteResponse']?['result'] as List?) ?? const [];
+          for (final item in results) {
+            final map = item as Map<String, dynamic>;
+            final sym = map['symbol'] as String?;
+            if (sym == null) continue;
+            final label = symbolToLabel[sym] ?? sym;
+            final price = (map['regularMarketPrice'] as num?)?.toDouble() ?? 0.0;
+            final change = (map['regularMarketChange'] as num?)?.toDouble() ?? 0.0;
+            final changePercent = (map['regularMarketChangePercent'] as num?)?.toDouble() ?? 0.0;
+            newData[label] = MarketData(
+              symbol: label,
+              price: price,
+              change: change,
+              changePercent: changePercent,
+              chartData: const [],
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Quote fetch failed: $e');
+      }
+
+      // 2) Small sparkline per symbol (chart endpoint)
+      for (final entry in symbols.entries) {
+        final label = entry.key;
+        final symbol = entry.value;
         try {
           final url = Uri.parse(
-            'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=$symbol&interval=5min&apikey=$apiKey',
+            _cors('https://query1.finance.yahoo.com/v8/finance/chart/$symbol?range=1d&interval=5m'),
           );
           final response = await http.get(url);
-
-          if (response.statusCode == 200) {
-            final data = jsonDecode(response.body);
-            final timeSeries =
-                data['Time Series (5min)'] as Map<String, dynamic>?;
-
-            if (timeSeries != null && timeSeries.isNotEmpty) {
-              final latestEntry = timeSeries.entries.first;
-              final latestData = latestEntry.value as Map<String, dynamic>;
-
-              final price =
-                  double.tryParse(latestData['1. open'] ?? '0') ?? 0.0;
-              final previousClose =
-                  double.tryParse(latestData['4. close'] ?? '0') ?? 0.0;
-
-              final change = price - previousClose;
-              final changePercent = previousClose != 0
-                  ? (change / previousClose) * 100
-                  : 0.0;
-
-              // Generate mock chart data (in real app, use historical data)
-              final chartData = List.generate(
-                20,
-                (i) => price + Random().nextDouble() * 100 - 50,
+          if (response.statusCode != 200) continue;
+          final json = jsonDecode(response.body) as Map<String, dynamic>;
+          final results = (json['chart']?['result'] as List?) ?? const [];
+          if (results.isEmpty) continue;
+          final result = results.first as Map<String, dynamic>;
+          final indicators = (result['indicators'] ?? const {}) as Map<String, dynamic>;
+          final quotes = (indicators['quote'] as List?) ?? const [];
+          final quote = quotes.isNotEmpty ? quotes.first as Map<String, dynamic> : const {};
+          final close = (quote['close'] as List?)?.whereType<num>().map((n) => n.toDouble()).toList() ?? const <double>[];
+          if (close.isNotEmpty) {
+            final trimmed = close.length > 30 ? close.sublist(close.length - 30) : close;
+            final existing = newData[label];
+            if (existing != null) {
+              newData[label] = MarketData(
+                symbol: existing.symbol,
+                price: existing.price,
+                change: existing.change,
+                changePercent: existing.changePercent,
+                chartData: trimmed,
               );
-
-              newData[symbol] = MarketData(
-                symbol: symbol,
-                price: price,
-                change: change,
-                changePercent: changePercent,
-                chartData: chartData,
+            } else {
+              newData[label] = MarketData(
+                symbol: label,
+                price: close.last,
+                change: 0,
+                changePercent: 0,
+                chartData: trimmed,
               );
             }
           }
         } catch (e) {
-          debugPrint('Error loading data for $symbol: $e');
+          debugPrint('Chart fetch failed for $label: $e');
         }
       }
 
@@ -579,6 +659,49 @@ class _HomePageState extends State<HomePage>
         _loadingMarketData = false;
         _marketDataError = 'Network error: $e';
       });
+    }
+  }
+
+  Future<void> _fetchTwelveData(
+    Map<String, String> labelToSymbol,
+    String apiKey,
+    Map<String, MarketData> out,
+  ) async {
+    for (final entry in labelToSymbol.entries) {
+      final label = entry.key;
+      final symbol = Uri.encodeQueryComponent(entry.value);
+      try {
+        final uri = Uri.parse(
+          'https://api.twelvedata.com/time_series?symbol=$symbol&interval=5min&outputsize=30&apikey=$apiKey',
+        );
+        final res = await http.get(uri);
+        if (res.statusCode != 200) continue;
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        final values = (json['values'] as List?) ?? const [];
+        if (values.isEmpty) continue;
+        final closes = <double>[];
+        for (final v in values) {
+          final m = v as Map<String, dynamic>;
+          final c = double.tryParse(m['close']?.toString() ?? '');
+          if (c != null) closes.add(c);
+        }
+        if (closes.isEmpty) continue;
+        // Twelve Data returns newest first
+        final price = closes.first;
+        final prev = closes.length > 1 ? closes[1] : price;
+        final change = price - prev;
+        final changePercent = prev != 0 ? (change / prev) * 100 : 0.0;
+        final chart = closes.reversed.take(30).toList();
+        out[label] = MarketData(
+          symbol: label,
+          price: price,
+          change: change,
+          changePercent: changePercent,
+          chartData: chart,
+        );
+      } catch (e) {
+        debugPrint('TD error for $label: $e');
+      }
     }
   }
 
@@ -659,13 +782,21 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // Use custom asset icons for the home quick actions
+    const iconAssets = {
+      'stocks': 'assets/icons/stock.png',
+      'future': 'assets/icons/future.png',
+      'options': 'assets/icons/options.png',
+      'commodity': 'assets/icons/stock-market.png',
+    };
     final items = _segmentDescriptors
         .map(
           (descriptor) => _HomeItem(
             title: descriptor.title,
             icon: descriptor.icon,
+            iconAsset: iconAssets[descriptor.key],
             segmentKey: descriptor.key,
-            backgroundColor: _segmentBackgroundColor, // Use solid orange color
+            backgroundColor: _segmentBackgroundColor,
           ),
         )
         .toList();
@@ -683,6 +814,13 @@ class _HomePageState extends State<HomePage>
         ),
         centerTitle: false,
         actions: [
+          IconButton(
+            tooltip: 'Daily Tip',
+            icon: const Icon(Icons.lightbulb_outline),
+            onPressed: () {
+              Navigator.of(context).push(fadeRoute(const DailyTipPage()));
+            },
+          ),
           // Removed the bell icon (Icons.notifications_none)
           // Replaced with Wallet icon
           IconButton(
@@ -730,7 +868,8 @@ class _HomePageState extends State<HomePage>
         builder: (context, constraints) {
           final width = constraints.maxWidth;
           final itemCount = items.length;
-          const double baseGap = 6.0;
+          // Slightly larger spacing to match design mock
+          const double baseGap = 10.0;
           final gap = itemCount > 1 ? baseGap : 0.0;
           final availableRowWidth = (width - 32).clamp(0.0, 520.0);
           final rawDiameter = itemCount > 0
@@ -738,7 +877,7 @@ class _HomePageState extends State<HomePage>
               : 0.0;
           double circleDiameter;
           if (rawDiameter.isFinite && rawDiameter > 0) {
-            circleDiameter = rawDiameter.clamp(42.0, 88.0);
+            circleDiameter = rawDiameter.clamp(42.0, 64.0);
             if (rawDiameter < 42.0) {
               circleDiameter = rawDiameter;
             }
@@ -769,22 +908,26 @@ class _HomePageState extends State<HomePage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Welcome, $_displayName!',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    _DailyTipChip(
-                      onTap: () {
-                        Navigator.of(
-                          context,
-                        ).push(fadeRoute(const DailyTipPage()));
+                    _GallerySection(
+                      images: _galleryImages,
+                      loading: _loadingGallery,
+                      error: _galleryError,
+                      onRetry: () {
+                        _loadGallery();
                       },
                     ),
 
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 16),
+
+                    Text(
+                      'Welcome, $_displayName',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.black87),
+                    ),
+
+                    const SizedBox(height: 12),
 
                     if (_segmentsError != null) ...[
                       Card(
@@ -812,10 +955,47 @@ class _HomePageState extends State<HomePage>
                       const LinearProgressIndicator(minHeight: 2),
                       const SizedBox(height: 12),
                     ],
-                    Center(
-                      child: SizedBox(
-                        width: rowWidth,
-                        child: Row(
+                      // Greeting header (simple, clean like the mock)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Hey $_displayName',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Today is a good day to start',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(color: Colors.black54),
+                                ),
+                              ],
+                            ),
+                          ),
+                          CircleAvatar(
+                            backgroundColor: Colors.grey.shade200,
+                            foregroundColor: scheme.primary,
+                            radius: 20,
+                            child: Text(_initial),
+                          )
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Center(
+                        child: SizedBox(
+                          width: rowWidth,
+                          child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             for (var i = 0; i < items.length; i++) ...[
@@ -825,6 +1005,7 @@ class _HomePageState extends State<HomePage>
                                 child: _HomeCircleTile(
                                   title: items[i].title,
                                   icon: items[i].icon,
+                                  iconAsset: items[i].iconAsset,
                                   backgroundColor: items[i]
                                       .backgroundColor, // Use backgroundColor
                                   diameter: circleDiameter,
@@ -841,24 +1022,34 @@ class _HomePageState extends State<HomePage>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _AdsSlider(
-                      assetPaths: const [
-                        'assets/add/1.mp4',
-                        'assets/add/2.mp4',
-                        'assets/add/3.mp4',
-                        'assets/add/4.mp4',
-                        'assets/add/5.mp4',
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _GallerySection(
-                      images: _galleryImages,
-                      loading: _loadingGallery,
-                      error: _galleryError,
-                      onRetry: () {
-                        _loadGallery();
-                      },
-                    ),
+                      const _MarketDataSection(),
+                      const SizedBox(height: 16),
+                      // Image/gradient promo slider (replaces video slider)
+                      _PromoSlider(
+                        items: const [
+                          _PromoItem(
+                            title: 'Make investing a habit\nwith SIPs',
+                            subtitle:
+                                'Start your journey with as little as Rs.500 per month',
+                            cta: 'Invest Now',
+                            asset: 'assets/icons/future.png',
+                          ),
+                          _PromoItem(
+                            title: 'Plan goals with\nSmart Baskets',
+                            subtitle: 'Curated sets to match your risk and horizon',
+                            cta: 'Explore',
+                            asset: 'assets/icons/stock.png',
+                          ),
+                          _PromoItem(
+                            title: 'Diversify across\nSegments',
+                            subtitle: 'Stocks, Futures & Commodity signals',
+                            cta: 'See More',
+                            asset: 'assets/icons/stock-market.png',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      const _MarketSymbolsGrid(),
                   ],
                 ),
               ),
@@ -873,6 +1064,49 @@ class _HomePageState extends State<HomePage>
         offset: _supportNudge,
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: 0,
+        selectedItemColor: _segmentBackgroundColor,
+        unselectedItemColor: Colors.black54,
+        onTap: (index) async {
+          if (index == 1) {
+            await Navigator.of(context).push(
+              fadeRoute(ReferralEarningsPage(session: _session)),
+            );
+          } else if (index == 2) {
+            await Navigator.of(context).push(
+              fadeRoute(
+                WalletScreen(
+                  name: _session.user.name,
+                  email: _session.user.email,
+                  phone: _session.user.phone,
+                  token: _accessToken,
+                ),
+              ),
+            );
+          } else if (index == 3) {
+            await Navigator.of(context).push(
+              fadeRoute(ProfilePage(session: _session)),
+            );
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.card_giftcard_outlined),
+            label: 'Referral',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            label: 'Wallet',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            label: 'Profile',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -954,13 +1188,15 @@ class _SupportChatButton extends StatelessWidget {
 
 class _HomeItem {
   final String title;
-  final IconData icon;
+  final IconData? icon;
+  final String? iconAsset;
   final String segmentKey;
-  final Color backgroundColor; // Changed to single background color
+  final Color backgroundColor;
 
   const _HomeItem({
     required this.title,
-    required this.icon,
+    this.icon,
+    this.iconAsset,
     required this.segmentKey,
     required this.backgroundColor,
   });
@@ -969,15 +1205,17 @@ class _HomeItem {
 /// Circle tile with bigger inner icon and smaller label.
 class _HomeCircleTile extends StatefulWidget {
   final String title;
-  final IconData icon;
-  final Color backgroundColor; // Changed to single background color
+  final IconData? icon;
+  final String? iconAsset;
+  final Color backgroundColor;
   final VoidCallback onTap;
   final double diameter;
   final bool hasNotification;
 
   const _HomeCircleTile({
     required this.title,
-    required this.icon,
+    this.icon,
+    this.iconAsset,
     required this.backgroundColor,
     required this.onTap,
     required this.diameter,
@@ -994,7 +1232,8 @@ class _HomeCircleTileState extends State<_HomeCircleTile> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final title = widget.title;
-    final icon = widget.icon;
+    final iconData = widget.icon;
+    final iconAsset = widget.iconAsset;
     final backgroundColor =
         widget.backgroundColor; // Use single background color
     final onTap = widget.onTap;
@@ -1018,7 +1257,7 @@ class _HomeCircleTileState extends State<_HomeCircleTile> {
     );
 
     // ? make the inner icon a bit smaller so everything breathes
-    final iconSize = (diameter * 0.4).clamp(16.0, 36.0); // Increased icon size
+    final iconSize = (diameter * 0.36).clamp(16.0, 30.0); // Increased icon size
 
     final baseScale = hasNotification ? 1.02 : 1.0;
     final hoverScale = hasNotification ? 0.03 : 0.04;
@@ -1046,29 +1285,49 @@ class _HomeCircleTileState extends State<_HomeCircleTile> {
                   child: InkWell(
                     onTap: onTap,
                     customBorder: const CircleBorder(),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: backgroundColor,
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Icon(icon, size: iconSize, color: Colors.white),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      border: Border.all(color: Colors.black12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                          if (iconAsset != null)
+                            Image.asset(
+                              iconAsset,
+                              width: iconSize,
+                              height: iconSize,
+                              fit: BoxFit.contain,
+                            )
+                          else
+                            Icon(
+                              iconData ?? Icons.circle,
+                              size: iconSize,
+                              color: backgroundColor,
+                            ),
                           if (hasNotification)
                             Positioned(
                               top: diameter * 0.18,
                               right: diameter * 0.18,
                               child: _NotificationBadge(
-                                iconColor: Colors.white,
-                                backgroundColor: backgroundColor.withValues(
-                                  alpha: 0.2,
+                                iconColor: backgroundColor,
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.9,
                                 ),
                               ),
                             ),
-                        ],
-                      ),
+                      ],
                     ),
+                  ),
                   ),
                 ),
               ),
@@ -1506,73 +1765,53 @@ class _GallerySliderState extends State<_GallerySlider> {
     final images = widget.images;
     final theme = Theme.of(context);
 
-    final bgGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        theme.colorScheme.primary.withValues(alpha: 0.12),
-        theme.colorScheme.secondary.withValues(alpha: 0.08),
-      ],
-    );
-
-    const double borderThickness = 10;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: bgGradient,
-        borderRadius: BorderRadius.circular(18),
-      ),
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       clipBehavior: Clip.hardEdge,
-      width: double.infinity,
       child: Padding(
-        padding: const EdgeInsets.all(borderThickness),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 200,
-                child: PageView.builder(
-                  controller: _controller,
-                  itemCount: images.length,
-                  onPageChanged: (index) => setState(() => _currentPage = index),
-                  itemBuilder: (context, index) {
-                    final image = images[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: _GalleryTile(image: image),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(images.length, (index) {
-                  final active = index == _currentPage;
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: active ? 14 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: active
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.primary.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 200,
+              child: PageView.builder(
+                controller: _controller,
+                itemCount: images.length,
+                onPageChanged: (index) => setState(() => _currentPage = index),
+                itemBuilder: (context, index) {
+                  final image = images[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: _GalleryTile(image: image),
                     ),
                   );
-                }),
+                },
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(images.length, (index) {
+                final active = index == _currentPage;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: active ? 14 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: active
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.primary.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                );
+              }),
+            ),
+          ],
         ),
       ),
     );
@@ -1686,6 +1925,86 @@ class _GalleryInfoCard extends StatelessWidget {
   }
 }
 
+// Simple grid with four market symbol cards (NIFTY, BANKNIFTY, COMMODITY, STOCKS)
+class _MarketSymbolsGrid extends StatelessWidget {
+  const _MarketSymbolsGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final items = const [
+      _SymbolItem('NIFTY 50', 'assets/symbols/nifty50.png'),
+      _SymbolItem('BANKNIFTY', 'assets/symbols/banknifty.png'),
+      _SymbolItem('COMMODITY', 'assets/symbols/commodity.png'),
+      _SymbolItem('STOCKS', 'assets/symbols/stocks.png'),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Real Market IDs',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.4,
+          ),
+          itemCount: items.length,
+          itemBuilder: (context, index) => _MarketSymbolCard(item: items[index]),
+        ),
+      ],
+    );
+  }
+}
+
+class _SymbolItem {
+  final String label;
+  final String asset;
+  const _SymbolItem(this.label, this.asset);
+}
+
+class _MarketSymbolCard extends StatelessWidget {
+  final _SymbolItem item;
+  const _MarketSymbolCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            item.asset,
+            fit: BoxFit.cover,
+          ),
+          Positioned(
+            left: 12,
+            bottom: 12,
+            child: Text(
+              item.label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MarketDataSection extends StatelessWidget {
   const _MarketDataSection();
 
@@ -1736,16 +2055,28 @@ class _MarketDataSection extends StatelessWidget {
       );
     }
 
-    if (marketData.isEmpty) return const SizedBox.shrink();
+    if (marketData.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            kIsWeb
+                ? 'Market data unavailable on web. Add --dart-define=TWELVEDATA_API_KEY=YOUR_KEY to use a web-friendly API, or run on device.'
+                : 'Market data unavailable right now. Pull to refresh.',
+          ),
+        ),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Market Overview',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 12),
         GridView.builder(
@@ -1787,21 +2118,20 @@ class _MarketDataCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              data.symbol
-                  .replaceAll('NSE:', '')
-                  .replaceAll('COMMODITY', 'COMM'),
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+              data.symbol,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
             Text(
-              '₹${data.price.toStringAsFixed(2)}',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              'Rs ${data.price.toStringAsFixed(2)}',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 4),
             Row(
               children: [
                 Icon(
@@ -1900,6 +2230,235 @@ class _ChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// ---------------------------------------------------------------------------
+// Promo image slider (gradient cards with CTA), inspired by provided mock
+// ---------------------------------------------------------------------------
+
+class _PromoItem {
+  final String title;
+  final String subtitle;
+  final String cta;
+  final String asset;
+
+  const _PromoItem({
+    required this.title,
+    required this.subtitle,
+    required this.cta,
+    required this.asset,
+  });
+}
+
+class _PromoSlider extends StatefulWidget {
+  final List<_PromoItem> items;
+
+  const _PromoSlider({required this.items});
+
+  @override
+  State<_PromoSlider> createState() => _PromoSliderState();
+}
+
+class _PromoSliderState extends State<_PromoSlider> {
+  late final PageController _controller;
+  int _index = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(viewportFraction: 0.92);
+    _startAuto();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _startAuto() {
+    _timer?.cancel();
+    if (widget.items.length <= 1) return;
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!_controller.hasClients) return;
+      final current = _controller.page?.round() ?? _index;
+      final last = widget.items.length - 1;
+      final next = current >= last ? 0 : current + 1;
+      _controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final dotColor = Theme.of(context).colorScheme.primary;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 170,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: items.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (_, i) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _PromoCard(item: items[i]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(items.length, (i) {
+            final active = i == _index;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: active ? 16 : 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: active ? dotColor : dotColor.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(10),
+              ),
+            );
+          }),
+        )
+      ],
+    );
+  }
+}
+
+class _PromoCard extends StatelessWidget {
+  final _PromoItem item;
+  const _PromoCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final gradient = const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFDFF1C7), // light green tint
+        Color(0xFFA7CF7A), // mid
+        Color(0xFF8FBC6F), // darker
+      ],
+      stops: [0.0, 0.6, 1.0],
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                decoration: const BoxDecoration(),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                // Illustration
+                Expanded(
+                  flex: 5,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.85),
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(12),
+                        child: Image.asset(
+                          item.asset,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              item.title,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF2F4E1F),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              item.subtitle,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: const Color(0xFF2F4E1F).withOpacity(0.85),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(minWidth: 120),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(24),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.08),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 3),
+                                    )
+                                  ],
+                                ),
+                                child: Text(
+                                  item.cta,
+                                  textAlign: TextAlign.center,
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: const Color(0xFF2F4E1F),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AdsSlider extends StatefulWidget {
@@ -2022,3 +2581,4 @@ class _AdsSliderState extends State<_AdsSlider> {
     );
   }
 }
+
